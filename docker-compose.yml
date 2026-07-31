@@ -1,0 +1,18 @@
+services:
+  kovaview:
+    build: .
+    container_name: kovaview
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      # Point at your IBKR Client Portal Gateway (paper or live).
+      # From inside the container use host.docker.internal; on the VM host use 127.0.0.1.
+      - IBKR_BASE=${IBKR_BASE:-http://host.docker.internal:5000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - kovaview_data:/data
+
+volumes:
+  kovaview_data:

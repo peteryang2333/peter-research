@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kova-OSS · 市场监控面板</title>
+<title>Peter Review · 我的实盘信号面板</title>
 <meta name="description" content="Self-hosted 6-module market dashboard. No Yahoo. Free data only.">
 <style>
 :root{
@@ -96,7 +96,7 @@ footer{color:var(--dim2);font-size:11.5px;text-align:center;padding:24px 0 12px;
 <div class="wrap">
 
   <header>
-    <div class="brand">Kova-OSS<span>自建市场监控面板 · 6 模块</span></div>
+    <div class="brand">Peter Review<span>我的实盘信号面板 · 6 模块</span></div>
     <div class="pill" id="stamp">载入中…</div>
     <div class="pill" id="freshness">—</div>
     <div class="spacer"></div>
@@ -365,6 +365,39 @@ function viewDiscipline(s){
   return priv+sizer+examples;
 }
 
+/* 净值曲线：手写 SVG，无依赖。少于 2 个点时不画。 */
+function equityCurve(p){
+  const c=(p&&p.nlv_curve)||[];
+  if(c.length<2) return c.length===1
+    ? `<div class="card" style="margin-top:14px"><h3>净值曲线</h3>
+        <div class="sub">bridge 目前只记录了 ${c.length} 天，累积到 2 天以上后自动开始绘制</div></div>`
+    : '';
+  const W=920,H=180,PAD=28;
+  const vs=c.map(x=>x.nlv), lo=Math.min(...vs), hi=Math.max(...vs), span=(hi-lo)||1;
+  const X=i=>PAD+i*(W-2*PAD)/(c.length-1);
+  const Y=v=>PAD+(1-(v-lo)/span)*(H-2*PAD);
+  const pts=c.map((x,i)=>`${X(i).toFixed(1)},${Y(x.nlv).toFixed(1)}`).join(' ');
+  const rising=vs[vs.length-1]>=vs[0];
+  const col=rising?'var(--up)':'var(--down)';
+  const peak=p.peak_nlv;
+  const peakLine=(peak&&peak<=hi&&peak>=lo)
+    ? `<line x1="${PAD}" y1="${Y(peak).toFixed(1)}" x2="${W-PAD}" y2="${Y(peak).toFixed(1)}"
+        stroke="var(--dim)" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>
+       <text x="${W-PAD}" y="${(Y(peak)-6).toFixed(1)}" text-anchor="end" font-size="10"
+        fill="var(--dim)">峰值 $${Math.round(peak).toLocaleString()}</text>` : '';
+  return `<div class="card" style="margin-top:14px"><h3>净值曲线</h3>
+    <div class="sub">来自 daily-signal-bridge 的每日 NLV 记录（IBKR 实盘）· 共 ${c.length} 个交易日</div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
+      <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      ${c.map((x,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(x.nlv).toFixed(1)}" r="2.5" fill="${col}"/>`).join('')}
+      ${peakLine}
+      <text x="${PAD}" y="14" font-size="10" fill="var(--dim)">$${Math.round(hi).toLocaleString()}</text>
+      <text x="${PAD}" y="${H-6}" font-size="10" fill="var(--dim)">$${Math.round(lo).toLocaleString()}</text>
+      <text x="${W-PAD}" y="${H-6}" text-anchor="end" font-size="10" fill="var(--dim)">${esc(c[c.length-1].date)}</text>
+    </svg></div>`;
+}
+
 function viewProof(s){
   const p=(PRIV&&PRIV.proof)||s.proof||{};
   if(p.private===true){
@@ -390,11 +423,18 @@ function viewProof(s){
       <div class="rowline"><span>最优分数</span><b>${n2(p.best_score,3)}</b></div>
       <div class="rowline"><span>窗口内换仓次数</span><b>${p.switches_in_window??'—'}</b></div>
     </div>
-    <div class="card"><h3>账户</h3><div class="sub">${esc(p.verified_by||'local strategy state')}</div>
-      <div class="kpi sm">${p.peak_nlv!=null?('$'+Number(p.peak_nlv).toLocaleString()):'—'}</div>
-      <div class="sub" style="margin-top:6px">历史峰值净值</div>
+    <div class="card"><h3>账户净值</h3><div class="sub">${esc(p.verified_by||'local strategy state')}</div>
+      <div class="kpi sm">${p.nlv!=null?('$'+Number(p.nlv).toLocaleString()):
+        (p.peak_nlv!=null?('$'+Number(p.peak_nlv).toLocaleString()):'—')}</div>
+      <div class="sub" style="margin-top:6px">${p.nlv!=null?('当前净值 · '+esc(p.nlv_asof||'')):'历史峰值净值'}</div>
+      <div class="rowline" style="margin-top:10px"><span>日变动</span>
+        <b class="${p.nlv_day_pct>0?'up':(p.nlv_day_pct<0?'down':'flat')}">${p.nlv_day_pct!=null?(p.nlv_day_pct>0?'+':'')+p.nlv_day_pct+'%':'—'}</b></div>
+      <div class="rowline"><span>距峰值回撤</span>
+        <b class="${p.drawdown_pct<0?'down':'flat'}">${p.drawdown_pct!=null?p.drawdown_pct+'%':'—'}</b></div>
+      <div class="rowline"><span>历史峰值</span><b>${p.peak_nlv!=null?('$'+Number(p.peak_nlv).toLocaleString()):'—'}</b></div>
     </div>
   </div>
+  ${equityCurve(p)}
   ${recent.length?`<div class="card" style="margin-top:14px"><h3>近期轮动记录</h3>
     <table><thead><tr><th>日期</th><th>标的</th><th>动作</th></tr></thead>
     <tbody>${recent.map(r=>`<tr><td style="text-align:left">${esc(r.date||r[0]||'')}</td>

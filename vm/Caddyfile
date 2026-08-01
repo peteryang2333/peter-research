@@ -1,0 +1,32 @@
+{
+	# v2ray already owns 443, so the dashboard listens on 8443.
+	# Port 80 is used only for the Let's Encrypt HTTP-01 challenge.
+	http_port 80
+	https_port 8443
+	admin off
+}
+
+152-70-194-225.sslip.io:8443 {
+	root * /srv
+	encode gzip
+	file_server
+
+	basic_auth {
+		PLACEHOLDER_USER PLACEHOLDER_HASH
+	}
+
+	header {
+		Cache-Control "no-store"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 2mb
+			roll_keep 2
+		}
+		level ERROR
+	}
+}

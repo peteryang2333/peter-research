@@ -654,6 +654,24 @@ def build_proof(state, hist_cache):
 
     recent = sig.get("recent") or []
     switches = sum(1 for i in range(1, len(recent)) if recent[i][1] != recent[i - 1][1])
+
+    # Equity curve straight from the bridge's daily NLV log (IBKR-sourced).
+    curve, nlv, nlv_prev, dd, day_chg = [], None, None, None, None
+    raw_nlv = state.get("nlv") or {}
+    if isinstance(raw_nlv, dict) and raw_nlv:
+        try:
+            curve = sorted(((d, float(v)) for d, v in raw_nlv.items()),
+                           key=lambda kv: kv[0])
+            curve = [{"date": d, "nlv": round(v, 2)} for d, v in curve]
+            nlv = curve[-1]["nlv"]
+            if len(curve) >= 2:
+                nlv_prev = curve[-2]["nlv"]
+                day_chg = round((nlv / nlv_prev - 1) * 100, 2) if nlv_prev else None
+            if peak:
+                dd = round((nlv / peak - 1) * 100, 2)
+        except (TypeError, ValueError):
+            curve = []
+
     return {
         "holding": holding, "weight": sig.get("weight"),
         "cash": sig.get("cash"), "spy_trend": sig.get("spy_trend"),
@@ -661,13 +679,26 @@ def build_proof(state, hist_cache):
         "signal_date": sig.get("date"), "generated_at": sig.get("generated_at"),
         "recent": recent, "switches_in_window": switches,
         "peak_nlv": peak, "position": pos,
+        "nlv": nlv, "nlv_prev": nlv_prev, "nlv_day_pct": day_chg,
+        "drawdown_pct": dd, "nlv_curve": curve[-120:],
+        "nlv_asof": curve[-1]["date"] if curve else None,
         "verified_by": "local daily-signal-bridge state (IBKR-backed)",
     }
 
 
 def build_discipline(state, hist_cache, direction):
     """Position sizing presets + risk context driven by the live posture."""
-    eq = (state.get("equity") or {}).get("peak_nlv") or 100000.0
+    # Size off the *current* NLV when the bridge has logged it; peak equity
+    # would over-size after a drawdown.
+    eq = None
+    raw_nlv = state.get("nlv") or {}
+    if isinstance(raw_nlv, dict) and raw_nlv:
+        try:
+            eq = float(raw_nlv[max(raw_nlv)])
+        except (TypeError, ValueError, KeyError):
+            eq = None
+    if not eq:
+        eq = (state.get("equity") or {}).get("peak_nlv") or 100000.0
     posture = direction.get("posture", 50) if isinstance(direction, dict) else 50
 
     if posture >= 70:
@@ -714,6 +745,8 @@ def main():
         os.path.dirname(os.path.abspath(__file__)), "web", "snapshot.json"))
     ap.add_argument("--signal", default="/opt/daily-signal-bridge/signal_target.json")
     ap.add_argument("--equity", default="/opt/daily-signal-bridge/equity_state.json")
+    ap.add_argument("--nlv", default="/opt/daily-signal-bridge/daily_nlv.json",
+                    help="daily NLV series written by the bridge (private only)")
     ap.add_argument("--public", action="store_true",
                     help="strip personal broker data (real holdings, NLV, equity) "
                          "so the snapshot is safe to publish on a public site")
@@ -752,7 +785,8 @@ def main():
     spy_c = closes_of(hist_cache.get("SPY"))
 
     direction = build_direction(hist_cache)
-    state = read_state({"signal": args.signal, "equity": args.equity})
+    state = read_state({"signal": args.signal, "equity": args.equity,
+                        "nlv": args.nlv})
 
     snap = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

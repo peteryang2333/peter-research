@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Peter Review · 我的实盘信号面板</title>
+<title>Peter Research · 皮特的调研</title>
 <meta name="description" content="Self-hosted 6-module market dashboard. No Yahoo. Free data only.">
 <style>
 :root{
@@ -111,7 +111,7 @@ button.btn:disabled{opacity:.55;cursor:progress}
 <div class="wrap">
 
   <header>
-    <div class="brand">Peter Review<span>多源信号融合 · 看盘面板</span></div>
+    <div class="brand">Peter Research<span>皮特的调研 · 多源信号看盘</span></div>
     <div class="pill" id="stamp">载入中…</div>
     <div class="pill" id="freshness">—</div>
     <div class="spacer"></div>
@@ -157,7 +157,7 @@ let SNAP=null, PRIV=null, TAB='overview', MACRO_METRIC='infl';
 let MOVER_TAB='active', FLOW_TAB='inst';
 const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
             ['movers','04 最活跃'],['flow','05 资金·机构'],['rank','06 复合排名'],
-            ['kova','07 打分'],['discipline','08 纪律'],['proof','09 验证']];
+            ['vcp','07 VCP融合'],['kova','08 打分'],['discipline','09 纪律'],['proof','10 验证']];
 
 /* ============================ modules ============================ */
 function viewOverview(s){
@@ -668,6 +668,7 @@ function compLookup(s){
   return m;
 }
 function starIf(c){ return (c&&c.in_thesis)?' <span style="color:var(--gold);font-size:11px" title="落在你的论点池">★</span>':''; }
+function vcpTag(c){ return (c&&c.in_vcp)?' <span style="color:var(--violet);font-size:10px;border:1px solid var(--violet);border-radius:6px;padding:0 4px" title="落在你的 VCP 每日扫描池">VCP</span>':''; }
 function viewMovers(s){
   const f=s.flow||{}, active=(f.most_active||[]), acc=(f.accumulation||[]);
   const cm=compLookup(s);
@@ -680,7 +681,7 @@ function viewMovers(s){
     const rows=active.slice().sort((a,b)=>(cm[b.sym]?cm[b.sym].score:0)-(cm[a.sym]?cm[a.sym].score:0));
     tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th><th>系统分</th><th>状态</th><th>为什么高亮</th></tr></thead>
       <tbody>${rows.map((x,i)=>{const c=cm[x.sym]||{}; return `<tr><td style="color:var(--dim2)">${i+1}</td>
-        <td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+        <td class="sym">${esc(x.sym)}${starIf(c)}${vcpTag(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
         <td>${c.score!=null?scoreChip(c.score):'—'}</td><td>${healthBadge(c.health)}</td>
         <td style="text-align:left;max-width:300px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
           ${(c.why||[]).map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`;}).join('')}</tbody></table>`;
@@ -689,7 +690,7 @@ function viewMovers(s){
     tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th>
       <th>成交额(十亿$)</th><th>相对量</th><th>资金流向指数</th><th>状态</th><th>系统分</th></tr></thead>
       <tbody>${rows.map((x,i)=>{const c=cm[x.sym]||{}; return `<tr><td style="color:var(--dim2)">${i+1}</td>
-        <td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+        <td class="sym">${esc(x.sym)}${starIf(c)}${vcpTag(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
         <td>${x.dvol_b!=null?n2(x.dvol_b):'—'}</td>
         <td style="color:${x.relvol&&x.relvol>=150?'var(--gold)':'var(--dim)'}">${x.relvol!=null?x.relvol+'%':'—'}</td>
         <td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
@@ -714,7 +715,7 @@ function viewFlow(s){
   const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="FLOW_TAB='acc';renderBody()">资金吸筹</button>`;
   const instTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>评级</th>
     <th>买/持/卖</th><th>目标价</th><th>上行空间</th><th>共识分</th><th>系统分</th></tr></thead>
-    <tbody>${conv.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td>
+    <tbody>${conv.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}${vcpTag(c)}</td><td>${n2(x.price)}</td>
       <td>${pct(x.pct)}</td><td style="text-align:left">${ratingBadge(x.rating_label)}</td>
       <td style="color:var(--dim)">${x.buy||0}/${x.hold||0}/${x.sell||0}</td>
       <td>${x.target?('$'+n2(x.target)):'—'}</td>
@@ -722,7 +723,7 @@ function viewFlow(s){
       <td>${scoreChip(x.consensus_score)}</td>
       <td>${c.score!=null?scoreChip(c.score):'—'}</td></tr>`;}).join('')}</tbody></table>`;
   const accTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>资金流向指数</th><th>状态</th><th>系统分</th></tr></thead>
-    <tbody>${acc.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td>
+    <tbody>${acc.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}${vcpTag(c)}</td><td>${n2(x.price)}</td>
       <td>${pct(x.pct)}</td><td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
       <td style="text-align:left">${flowStateBadge(x.flow_state)}</td>
       <td>${c.score!=null?scoreChip(c.score):'—'}</td></tr>`;}).join('')}</tbody></table>`;
@@ -754,13 +755,56 @@ function viewRank(s){
     ${specHtml}
     <table style="margin-top:12px"><thead><tr><th>标的</th><th>价格</th><th>日</th><th>分数</th><th>状态</th>
       <th>因子(技/活/流/机/论)</th><th>为什么高亮</th></tr></thead>
-    <tbody>${rows.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+    <tbody>${rows.map(x=>`<tr><td class="sym">${esc(x.sym)}${vcpTag(x)}</td><td>${n2(x.price)}</td>
       <td>${pct(x.pct)}</td><td>${scoreChip(x.score)}</td>
       <td>${healthBadge(x.health)}</td>
       <td>${contribBars(x.contrib)}</td>
       <td style="text-align:left;max-width:320px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
         ${x.why.map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table>
     <div class="hint">${esc(c.method||'')}</div>
+  </div>`;
+}
+
+/* ---- 07 VCP 融合：每日 VCP 扫描 × 5 因子系统 ---- */
+function verdictColor(v){
+  if(!v) return 'var(--dim2)';
+  if(v.startsWith('强')) return 'var(--up)';
+  if(v.startsWith('警惕')) return 'var(--gold)';
+  if(v.startsWith('中')) return 'var(--blue)';
+  if(v.startsWith('弱')) return 'var(--down)';
+  return 'var(--dim2)';
+}
+function vcpTable(rows, title){
+  return `<div class="card" style="margin-top:14px"><h3>${title}</h3>
+    <table><thead><tr><th>标的</th><th>VCP分</th><th>RS</th><th>价格</th><th>突破挂单</th><th>距突破%</th><th>吊灯止损</th><th>硬止损</th><th>系统分</th><th>综合</th><th>判定</th><th>为什么(系统)</th></tr></thead>
+    <tbody>${rows.map(x=>`<tr>
+      <td class="sym">${esc(x.sym)}</td>
+      <td style="white-space:nowrap">${'★'.repeat(x.vcp_score)}<span style="color:var(--dim2)">${'☆'.repeat(3-x.vcp_score)}</span></td>
+      <td>${x.rs}</td><td>${n2(x.price)}</td>
+      <td>${n2(x.trigger)}</td>
+      <td class="${x.dist_breakout<=1?'up':(x.dist_breakout>5?'down':'flat')}">${x.dist_breakout}%</td>
+      <td>${n2(x.stop_chandelier)}</td>
+      <td>${n2(x.stop_hard)}</td>
+      <td>${x.system_score!=null?scoreChip(x.system_score):'<span class="flat">—</span>'}</td>
+      <td>${x.combined!=null?scoreChip(x.combined):'<span class="flat">—</span>'}</td>
+      <td style="text-align:left;color:${verdictColor(x.verdict)};white-space:nowrap;font-weight:600">${esc(x.verdict)}</td>
+      <td style="text-align:left;max-width:280px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
+        ${(x.why||[]).map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+function viewVcp(s){
+  const v=s.vcp;
+  if(!v){
+    return `<div class="card"><h3>VCP 信号融合</h3>
+      <div class="notice">本快照未加载 VCP 扫描。本地或 VM 运行 <code>python3 vm/collect.py --vcp /path/to/VCP/数据</code>（目录会自动取最新的 vcp_US_*.txt）即可把每日 VCP 买入榜按本面板 5 因子系统打分并融合，看到「买入前10榜 / 额外买入前10榜」的系统分与综合判定。</div></div>`;
+  }
+  const buy=(v.buy_top10||[]), ext=(v.extra_top10||[]);
+  return `
+  <div class="card"><h3>VCP 信号融合 · 每日扫描 × 5 因子系统</h3>
+    <div class="sub">扫描日期 ${esc(v.date||'')} · ${esc(v.market||'')} · 池 ${esc(v.pool||'')} · 共 ${v.n} 只 VCP 形态标的　——　VCP 分(形态强度) 与 系统分(技术+活跃+资金+机构+论点) 双维度，先打分、再选买哪个。</div>
+    <div class="hint" style="margin-top:6px">买入前10榜 = VCP 形态最强梯队；额外买入前10榜 = 次优梯队。综合 = 0.4×VCP归一 + 0.6×系统分。绿=强(形态+系统双高) / 金=警惕(形态好但系统分低) / 蓝=中(次优) / 红=弱。仅供研究，非投资建议。</div>
+    ${buy.length?vcpTable(buy,'买入前10榜 · 形态最强'):'<div class="notice">无买入前10数据</div>'}
+    ${ext.length?vcpTable(ext,'额外买入前10榜 · 次优梯队'):''}
+    <div class="hint" style="margin-top:10px">${esc(v.method||'')}</div>
   </div>`;
 }
 
@@ -787,7 +831,7 @@ function bindSizer(){
 /* ============================ render ============================ */
 const VIEWS={overview:viewOverview,macro:viewMacro,direction:viewDirection,
              rotation:viewRotation,movers:viewMovers,flow:viewFlow,rank:viewRank,
-             kova:viewKova,discipline:viewDiscipline,proof:viewProof};
+             vcp:viewVcp,kova:viewKova,discipline:viewDiscipline,proof:viewProof};
 
 function renderNav(){
   $('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===TAB?'on':''}">${l}</button>`).join('');

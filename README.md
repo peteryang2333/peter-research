@@ -1,7 +1,8 @@
 # Peter Review
 
-A self-hosted, six-module market dashboard. Static front end, no build step, no chart
-library, **no Yahoo / yfinance**, no API keys.
+A self-hosted, multi-source signal dashboard. Static front end, no build step, no chart
+library, **no Yahoo / yfinance**, no API keys. Several independent signal layers are fused
+into one watch tool: your thesis is only one of five inputs, so no single opinion dominates.
 
 **Public demo:** https://peteryang2333.github.io/peter-review/
 
@@ -11,19 +12,27 @@ It runs in two flavours from the same code:
 |---|---|---|
 | Where | GitHub Pages | Oracle VM, behind HTTPS + basic auth |
 | Refreshed by | GitHub Actions cron | root cron on the VM |
-| Modules 01–04 | live market data | live market data |
-| Modules 05–06 | redacted placeholders | real holdings, NLV, equity curve |
+| Modules 01–07 | live market data | live market data |
+| Modules 08–09 | redacted placeholders | real holdings, NLV, equity curve |
 
 ## Modules
 
-| # | Module | What it shows | Source |
-|---|--------|---------------|--------|
-| 01 | Macro | Global CPI heat tiers, hottest / coolest economies | World Bank |
-| 02 | Direction | Posture score (Trend / Breadth / Credit / Vol / Leadership) + index, rate, credit and crypto tape | stockanalysis + nasdaq |
-| 03 | Rotation | RRG of the 11 SPDR sectors vs SPY, with 6-week tails | derived |
-| 04 | Score | Transparent composite screener (trend, momentum, relative strength, distance from high, volume) | derived |
-| 05 | Discipline | Percent-risk sizer, risk budget scaled by the live posture | local state |
-| 06 | Proof | Current holding, NLV, drawdown, equity curve, rotation log — **private only** | local strategy state |
+| Tab | View | What it shows | Source |
+|-----|------|---------------|--------|
+| 01 宏观 | Macro | Global CPI / GDP heat tiers, hottest / coolest economies | World Bank |
+| 02 方向 | Direction | Posture score (Trend / Breadth / Credit / Vol / Leadership) + index, rate, credit and crypto tape | stockanalysis + nasdaq |
+| 03 轮动 | Rotation | RRG of the 11 SPDR sectors **and** 26 theme/style ETFs (semis, software, biotech, banks, treasuries, gold…) vs SPY | derived |
+| 04 最活跃 | Movers | Most-active US stocks by dollar volume + per-stock accumulation / distribution (net-flow index) | derived from OHLCV |
+| 05 资金·机构 | Flow & Institutional | Analyst consensus (buy/hold/sell, target upside) + money-flow accumulation list | nasdaq consensus |
+| 06 复合排名 | Composite Ranker | **5-factor fusion** = 0.35·technical + 0.10·activity + 0.20·flow + 0.20·institutional + 0.15·thesis, with a per-stock "why highlighted" list | all of the above |
+| 07 打分 | Score | Transparent screener on your thematic watchlist (trend, momentum, relative strength, distance from high, volume) | derived |
+| 08 纪律 | Discipline | Percent-risk position sizer; risk budget scaled by the live posture (private: real holdings/NLV) | local state |
+| 09 验证 | Proof | Current holding, NLV, drawdown, equity curve, rotation log — **private only** | local strategy state |
+
+**Why five signals, not just your thesis:** a single-thesis ranker is fragile. The composite
+ranker blends the technical screener, trading activity, money flow, institutional consensus and
+your own thesis — each weighted, none with veto — so a gap in any one view is covered by the
+others. The "why highlighted" column shows exactly which signals fired for each stock.
 
 Every score is a mechanical, reproducible formula. No black box, no proprietary rating.
 
@@ -34,8 +43,9 @@ public :  Actions cron -> collect.py --public -> docs/snapshot.json -> Pages
 private:  root cron    -> collect.py           -> /opt/peter-review/web/snapshot.json -> Caddy
 ```
 
-- `vm/collect.py` fetches ~43 symbols in parallel (~20 s, ~30 MB RSS, stdlib + `requests`
-  only) and writes one flat `snapshot.json`.
+- `vm/collect.py` fetches ~190 symbols (155 liquid cross-sector stocks + 26 ETFs + benchmarks
+  and sectors) in parallel (~4 min, stdlib + `requests` only) and writes one flat `snapshot.json`.
+  Edit `vm/liquid_universe.json` to change the liquid pool.
 - `docs/index.html` is a single dependency-free file that reads that JSON. The RRG and the
   equity curve are hand-drawn SVG, so the page loads instantly.
 - The public workflow refuses to publish a snapshot that fails its privacy or completeness

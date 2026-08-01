@@ -7,12 +7,22 @@
 }
 
 152-70-194-225.sslip.io:8443 {
-	root * /srv
-	encode gzip
-	file_server
-
 	basic_auth {
 		PLACEHOLDER_USER PLACEHOLDER_HASH
+	}
+
+	# "Re-collect now" trigger. peter-refreshd listens on a unix socket inside
+	# this container's own volume - no host TCP port exists, so this
+	# reverse_proxy is the single way in, and it sits behind basic_auth above.
+	@api path /api/*
+	handle @api {
+		reverse_proxy unix//data/refreshd.sock
+	}
+
+	handle {
+		root * /srv
+		encode gzip
+		file_server
 	}
 
 	header {

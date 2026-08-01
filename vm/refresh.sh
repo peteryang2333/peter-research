@@ -8,6 +8,11 @@ BASE=/opt/peter-review
 STATE=/var/lib/docker/volumes/vps_bridge_data/_data
 LOG=$BASE/refresh.log
 
+# Cron and the dashboard's "re-collect now" button can both land here. Only one
+# collector at a time - this box has 1 GB of RAM. Wait up to 4 min, then bail.
+exec 9>"$BASE/.refresh.lock"
+flock -w 240 9 || { echo "$(date -Is) another refresh holds the lock, giving up" >>"$LOG"; exit 0; }
+
 # Keep the log bounded - this box only has 1 GB and a shared disk.
 if [ -f "$LOG" ]; then tail -n 400 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"; fi
 exec >>"$LOG" 2>&1

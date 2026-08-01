@@ -9,7 +9,8 @@
 :root{
   --bg:#0b0e14; --panel:#141922; --panel2:#1b2230; --line:#242c3a;
   --txt:#e6edf6; --dim:#8b98ad; --dim2:#5f6b7e;
-  --up:#ff4d4f; --down:#26c281;           /* 中国习惯：涨红 跌绿 */
+  --up:#26c281; --down:#ff4d4f;           /* 国际主流：涨绿 跌红 */
+  --ok:#26c281; --bad:#ff4d4f; --warn:#e3b341;   /* 语义色：好 / 坏 / 警示（与涨跌解耦） */
   --gold:#e3b341; --blue:#4d9fff; --violet:#a371f7;
 }
 *{box-sizing:border-box}
@@ -25,7 +26,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
 .brand span{color:var(--dim);font-weight:400;font-size:12px;margin-left:6px}
 .pill{padding:3px 10px;border-radius:999px;font-size:12px;
   background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
-.pill.live{color:var(--down);border-color:#1d4d3c}
+.pill.live{color:var(--ok);border-color:#1d4d3c}
 .pill.stale{color:var(--gold);border-color:#4d431d}
 .spacer{flex:1}
 button.btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
@@ -76,9 +77,9 @@ tbody tr:hover{background:#171d28}
 .b-watch{background:#33290f;color:var(--gold)}
 .b-weak{background:#331d0f;color:#ff9f45}
 .b-reduce{background:#3a1418;color:#ff6b6b}
-.b-lead{background:#3a1418;color:#ff7b7b}
+.b-lead{background:#12301f;color:#3ddc84}
 .b-weaken{background:#33290f;color:var(--gold)}
-.b-lag{background:#12301f;color:#3ddc84}
+.b-lag{background:#3a1418;color:#ff7b7b}
 .b-improve{background:#122a3a;color:#5bb8ff}
 .score{display:inline-block;min-width:34px;padding:2px 6px;border-radius:6px;font-weight:700;font-size:12px}
 
@@ -93,12 +94,17 @@ footer{color:var(--dim2);font-size:11.5px;text-align:center;padding:24px 0 12px;
 .hidden{display:none}
 .loading{text-align:center;padding:70px 0;color:var(--dim)}
 .mtab{padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;font-size:12px}
-.mtab.on{background:var(--up);color:#0b0e14;border-color:var(--up);font-weight:600}
+.mtab.on{background:var(--blue);color:#0b0e14;border-color:var(--blue);font-weight:600}
 .evstrip{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 .evchip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:4px 12px;font-size:12px}
 .evchip i{font-style:normal;color:var(--dim2);font-size:11px}
-.evchip i.hot{color:var(--down);font-weight:600}
+.evchip i.hot{color:var(--bad);font-weight:600}
 .b-ok{background:#12301f;color:#3ddc84}
+details.card summary::-webkit-details-marker{display:none}
+details.card summary::before{content:"▸ ";color:var(--dim)}
+details.card[open] summary::before{content:"▾ "}
+code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+button.btn:disabled{opacity:.55;cursor:progress}
 </style>
 </head>
 <body>
@@ -117,6 +123,7 @@ footer{color:var(--dim2);font-size:11.5px;text-align:center;padding:24px 0 12px;
 
   <footer>
     数据源：stockanalysis.com · api.nasdaq.com · api.worldbank.org　|　<b>不使用 Yahoo / yfinance</b><br>
+    配色口径：<span class="up">涨绿</span> / <span class="down">跌红</span>（国际主流，与 TradingView / Bloomberg 一致）<br>
     全部为公开免费数据的机械计算结果，非投资建议；是否操作由你本人决策。
   </footer>
 </div>
@@ -127,7 +134,7 @@ const $ = (s,r=document)=>r.querySelector(s);
 const el = (h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild;};
 const n2 = (v,d=2)=> (v===null||v===undefined||isNaN(v)) ? '—' : Number(v).toFixed(d);
 const esc = (s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-/* 涨红跌绿 */
+/* 涨绿跌红（国际主流口径，见 :root --up / --down） */
 function pctCls(v){ if(v===null||v===undefined||isNaN(v)) return 'flat'; return v>0?'up':(v<0?'down':'flat'); }
 function pct(v,d=2){ if(v===null||v===undefined||isNaN(v)) return '<span class="flat">—</span>';
   const s=(v>0?'+':'')+Number(v).toFixed(d)+'%'; return `<span class="${pctCls(v)}">${s}</span>`; }
@@ -205,7 +212,7 @@ function worldMapSVG(items, metric){
   const W=680,H=340,P=10;
   const X=v=>P+(v+180)/360*(W-2*P);
   const Y=v=>(90-v)/180*(H-2*P)+P;
-  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#26c281'}[t]||'#8b98ad');
+  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#8b9dff'}[t]||'#8b98ad');
   const vals=items.map(x=> x[metric]!=null?Math.abs(x[metric]):0);
   const mx=Math.max(...vals,1);
   let g=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:${W}px;margin:0 auto">
@@ -227,7 +234,7 @@ function worldMapSVG(items, metric){
 function viewMacro(s){
   const m=s.macro, items=(m.items||[]).slice().sort((a,b)=>b.infl-a.infl);
   const metric=window.MACRO_METRIC||'infl';
-  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#26c281'}[t]||'#8b98ad');
+  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#8b9dff'}[t]||'#8b98ad');
   const max=Math.max(...items.map(x=>Math.min(x.infl,20)),1);
   const gdpBtn=`<button class="mtab ${metric==='gdp'?'on':''}" onclick="MACRO_METRIC='gdp';renderBody()">GDP 增速</button>`;
   const inflBtn=`<button class="mtab ${metric==='infl'?'on':''}" onclick="MACRO_METRIC='infl';renderBody()">通胀 CPI</button>`;
@@ -302,17 +309,17 @@ function rrgSvg(sectors){
   const halfY=Math.max(100-y0,y1-100,0.8); y0=100-halfY; y1=100+halfY;
   const X=v=>P+(v-x0)/(x1-x0)*(W-2*P), Y=v=>H-P-(v-y0)/(y1-y0)*(H-2*P);
   const cx=X(100), cy=Y(100);
-  const qc={Leading:'#ff6b6b',Weakening:'#e3b341',Lagging:'#26c281',Improving:'#4d9fff'};
+  const qc={Leading:'#3ddc84',Weakening:'#e3b341',Lagging:'#ff6b6b',Improving:'#4d9fff'};
   let g=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;display:block;margin:0 auto">
-    <rect x="${cx}" y="${P}" width="${W-P-cx}" height="${cy-P}" fill="#ff4d4f" opacity=".05"/>
+    <rect x="${cx}" y="${P}" width="${W-P-cx}" height="${cy-P}" fill="#26c281" opacity=".05"/>
     <rect x="${cx}" y="${cy}" width="${W-P-cx}" height="${H-P-cy}" fill="#e3b341" opacity=".05"/>
-    <rect x="${P}" y="${cy}" width="${cx-P}" height="${H-P-cy}" fill="#26c281" opacity=".05"/>
+    <rect x="${P}" y="${cy}" width="${cx-P}" height="${H-P-cy}" fill="#ff4d4f" opacity=".05"/>
     <rect x="${P}" y="${P}" width="${cx-P}" height="${cy-P}" fill="#4d9fff" opacity=".05"/>
     <line x1="${P}" y1="${cy}" x2="${W-P}" y2="${cy}" stroke="#3a465c" stroke-width="1"/>
     <line x1="${cx}" y1="${P}" x2="${cx}" y2="${H-P}" stroke="#3a465c" stroke-width="1"/>
-    <text x="${W-P-6}" y="${P+16}" fill="#ff7b7b" font-size="12" text-anchor="end">领先 Leading</text>
+    <text x="${W-P-6}" y="${P+16}" fill="#3ddc84" font-size="12" text-anchor="end">领先 Leading</text>
     <text x="${W-P-6}" y="${H-P-6}" fill="#e3b341" font-size="12" text-anchor="end">走弱 Weakening</text>
-    <text x="${P+6}" y="${H-P-6}" fill="#3ddc84" font-size="12">落后 Lagging</text>
+    <text x="${P+6}" y="${H-P-6}" fill="#ff7b7b" font-size="12">落后 Lagging</text>
     <text x="${P+6}" y="${P+16}" fill="#5bb8ff" font-size="12">改善 Improving</text>
     <text x="${W/2}" y="${H-14}" fill="#5f6b7e" font-size="11" text-anchor="middle">RS-Ratio（相对强弱）→</text>
     <text x="16" y="${H/2}" fill="#5f6b7e" font-size="11" transform="rotate(-90 16 ${H/2})" text-anchor="middle">RS-Momentum（动量）→</text>`;
@@ -375,8 +382,65 @@ function viewKova(s){
     <div class="hint">评分是<b>透明可复核</b>的机械口径（趋势 / 动量 / 相对强弱 / 距高点 / 量能加权），不是黑箱算法。
     状态：Healthy 站稳均线 · Watch 有回撤 · Weak 跌破 MA50 · REDUCE 破 MA200 且中期弱。</div>
   </div>
+  ${methodCard(s)}
   <div class="card" style="margin-top:14px"><h3>杠杆 ETF 轮动池</h3>
     <div class="sub">你实盘策略的候选标的</div>${kovaTable(lev)}</div>`;
+}
+
+/* 口径说明：股票池怎么来的 + 分数怎么算的（数据来自 snapshot，不会和代码走偏） */
+function methodCard(s){
+  const u=s.universe, spec=(s.kova&&s.kova.spec)||null;
+  if(!u&&!spec) return '';
+  const groups=(u&&u.watchlist_groups)||[];
+  const poolHtml=groups.map(g=>`
+    <div style="margin:10px 0">
+      <div><b>${esc(g.name)}</b> <span class="badge" style="background:var(--panel2);color:var(--dim)">${g.syms.length} 只</span></div>
+      <div style="margin:5px 0 4px">${g.syms.map(x=>`<span class="evchip" style="padding:2px 9px;margin:2px 4px 2px 0">${esc(x)}</span>`).join('')}</div>
+      <div class="hint" style="margin:0">${esc(g.why||'')}</div>
+    </div>`).join('');
+
+  const facHtml=spec?spec.factors.map(f=>`
+    <div class="sub-row"><b>${esc(f.name)}</b>
+      <div class="bar"><i style="width:${f.w*3.4}%;background:var(--blue)"></i></div>
+      <s>${f.w}%</s></div>
+    <div class="hint" style="margin:-4px 0 8px 90px">${esc(f.how)}</div>`).join(''):'';
+
+  const healthHtml=spec?spec.health.map(h=>
+    `<div class="rowline"><span><span class="badge b-${h.tag.toLowerCase()}">${esc(h.tag)}</span></span>
+     <span style="text-align:right;max-width:70%">${esc(h.rule).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')}</span></div>`).join(''):'';
+
+  return `
+  <details class="card" style="margin-top:14px">
+    <summary style="cursor:pointer;font-weight:600;font-size:15px;list-style:none">
+      这个股票池是怎么选出来的？ <span style="color:var(--dim);font-weight:400;font-size:12px">（点开看口径）</span></summary>
+    <div style="margin-top:12px">
+      <div class="notice" style="border-left-color:var(--blue)">
+        <b>先说定位：这是「排序器」，不是「选股器」。</b><br>
+        ${esc((u&&u.note)||'')}
+      </div>
+
+      <h3 style="margin:16px 0 2px">① 池子构成 · 手工主题池（${(u&&u.watchlist_n)||groups.reduce((a,g)=>a+g.syms.length,0)} 只）</h3>
+      <div class="sub">按 2026H2 论点拼的三块，不是全市场扫描出来的</div>
+      ${poolHtml}
+      <div class="rowline"><span>杠杆 ETF 轮动池（独立一张表）</span><span>${((u&&u.leveraged)||[]).join(' · ')||'—'}</span></div>
+      <div class="rowline"><span>基准 / 板块（供相对强弱与 RRG 用）</span><span>${((u&&u.bench)||[]).join(' · ')}　+ ${(u&&u.sectors_n)||0} 个 SPDR 板块</span></div>
+
+      <h3 style="margin:18px 0 2px">② 分数怎么算 · 五因子加权（0–100）</h3>
+      <div class="sub">全部来自公开日线 / 成交量，任何人都能复算</div>
+      <div style="margin-top:10px">${facHtml}</div>
+
+      <h3 style="margin:18px 0 2px">③ 健康度怎么判 · 只看结构</h3>
+      <div style="margin-top:6px">${healthHtml}</div>
+      <div class="hint">${esc((spec&&spec.caveat)||'')}</div>
+
+      <div class="notice" style="margin-top:14px">
+        <b>已知边界：</b>① 需要至少 ${(spec&&spec.min_bars)||210} 根日线，次新股不打分；
+        ② 纯价量口径，<b>不含估值、财报、基本面</b>——高分只代表「现在强」，不代表「便宜」；
+        ③ 池子是人选的，池外再强的票这里也不会出现。<br>
+        想改池子：编辑 <code>${esc((u&&u.edit_where)||'vm/collect.py')}</code> 后重新采集即可。
+      </div>
+    </div>
+  </details>`;
 }
 
 function viewDiscipline(s){
@@ -555,7 +619,7 @@ function bindSizer(){
       <div class="card" style="padding:12px"><div class="sub">占用市值</div><div class="kpi sm">$${Math.round(notional).toLocaleString()}</div></div>
       <div class="card" style="padding:12px"><div class="sub">风险金额 (1R)</div><div class="kpi sm">$${Math.round(dollarRisk).toLocaleString()}</div></div>
       <div class="card" style="padding:12px"><div class="sub">仓位占比</div>
-        <div class="kpi sm" style="color:${expo>100?'var(--up)':'var(--txt)'}">${expo.toFixed(0)}%</div></div></div>`;
+        <div class="kpi sm" style="color:${expo>100?'var(--warn)':'var(--txt)'}">${expo.toFixed(0)}%</div></div></div>`;
   };
   ['eq','rp','ep','sp'].forEach(id=>{const e=$('#'+id); if(e) e.addEventListener('input',calc);});
   calc();
@@ -598,10 +662,84 @@ async function load(){
        if(p.ok) PRIV=await p.json(); }catch(e){}
   renderStamp(); renderNav(); renderBody();
 }
+/* ==================== refresh: 真·重新采集 vs 只重取快照 ====================
+   私有实例（Oracle VM）后面挂了 peter-refreshd，POST /api/refresh 会真的重跑
+   collect.py 去拉最新行情；公开站点是 GitHub Pages 静态托管，没有后端，
+   自动降级成「重新拉取最新快照文件」（快照由 Actions 定时重算）。          */
+let HAS_API   = false;   // 是否存在真采集后端
+let BUSY      = false;
+
+function setBtn(txt, busy){
+  const b=$('#refresh'); if(!b) return;
+  b.textContent=txt; b.disabled=!!busy;
+}
+function idleLabel(){ return HAS_API ? '重新采集' : '刷新'; }
+function idleTitle(){
+  return HAS_API
+    ? '真的重跑一次数据采集：抓最新行情 → 重算全部模块 → 刷新页面（约 20–40 秒）'
+    : '公开站点是静态快照（由 GitHub Actions 定时重算）；此按钮重新拉取最新快照文件';
+}
+function resetBtn(){ setBtn(idleLabel(), false); const b=$('#refresh'); if(b) b.title=idleTitle(); }
+
+async function apiState(){
+  try{
+    const r=await fetch('./api/refresh?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return null;
+    const ct=r.headers.get('content-type')||'';
+    if(!ct.includes('json')) return null;      // 静态站返回的是 404.html
+    return await r.json();
+  }catch(e){ return null; }
+}
+
+async function waitForRun(deadline){
+  while(Date.now()<deadline){
+    await new Promise(r=>setTimeout(r,2500));
+    const st=await apiState();
+    if(!st) return null;
+    if(st.state!=='running') return st;
+    const secs=Math.round((Date.now()-deadline+150000)/1000);
+    setBtn(`采集中 ${secs}s…`, true);
+  }
+  return null;
+}
+
+async function doRefresh(){
+  if(BUSY) return;
+  BUSY=true;
+  try{
+    if(HAS_API){
+      let res=null;
+      try{ res=await fetch('./api/refresh',{method:'POST',cache:'no-store'}); }catch(e){ res=null; }
+      if(res && res.status===429){
+        const st=await res.json().catch(()=>({}));
+        setBtn(`稍等 ${st.retry_after||10}s`, true);
+        await new Promise(r=>setTimeout(r,1500));
+      }else if(res && res.ok){
+        setBtn('采集中…', true);
+        const st=await waitForRun(Date.now()+150000);
+        if(st && st.rc!==0 && st.error){
+          setBtn('采集失败', true);
+          $('#freshness').className='pill stale';
+          $('#freshness').textContent='采集失败：'+String(st.error).slice(0,60);
+          await new Promise(r=>setTimeout(r,2500));
+        }
+      }else{
+        HAS_API=false;                          // 后端不在（静态托管）
+      }
+    }
+    setBtn('载入中…', true);
+    await load();
+  } finally {
+    BUSY=false; resetBtn();
+  }
+}
+
 TAB=(location.hash||'#overview').slice(1); if(!VIEWS[TAB]) TAB='overview';
-$('#refresh').onclick=load;
+$('#refresh').onclick=doRefresh;
 load();
-setInterval(load,120000);
+setInterval(()=>{ if(!BUSY) load(); },120000);
+/* 探测一次后端是否存在，决定按钮文案 */
+apiState().then(st=>{ HAS_API=!!st; resetBtn(); });
 </script>
 </body>
 </html>

@@ -57,11 +57,33 @@ LEVERAGED = ["FAS", "TQQQ", "SOXL", "TECL", "ERX"]
 
 # watchlist for the Kova-style score: user's cloud/software thesis + hardware
 # counterweights + the names KovaView itself was surfacing.
-WATCHLIST = [
-    "MSFT", "AMZN", "GOOGL", "DDOG", "NOW", "CRWD", "SNOW", "PLTR", "MDB",
-    "ANET", "NVDA", "AMD", "TSM", "AVGO",
-    "AMAT", "ALAB", "GLW", "CRDO",
+#
+# This is a THEMATIC pool, not a market-wide screen. It is assembled by hand
+# from the 2026-H2 thesis ("cloud/apps lead, hardware second") so the score is
+# a *ranker for names you already care about*, not a stock picker.
+WATCHLIST_GROUPS = [
+    {
+        "key": "cloud",
+        "name": "云厂 / 应用软件",
+        "why": "2026H2 核心论点：云收入 recurring、可持续，超配",
+        "syms": ["MSFT", "AMZN", "GOOGL", "DDOG", "NOW", "CRWD", "SNOW",
+                 "PLTR", "MDB"],
+    },
+    {
+        "key": "hardware",
+        "name": "半导体 / 硬件对照组",
+        "why": "低配但必须盯：用来验证「硬件退居次席」是否还成立",
+        "syms": ["ANET", "NVDA", "AMD", "TSM", "AVGO"],
+    },
+    {
+        "key": "supply",
+        "name": "AI 基建供应链延伸",
+        "why": "私募 all-in 数据中心的「卖水管」受益端，小仓位观察",
+        "syms": ["AMAT", "ALAB", "GLW", "CRDO"],
+    },
 ]
+
+WATCHLIST = [s for g in WATCHLIST_GROUPS for s in g["syms"]]
 
 # macro: World Bank inflation, consumer prices (annual %)
 WB_COUNTRIES = {
@@ -324,7 +346,7 @@ def _wb_indicator(codes, indicator):
     return multi
 
 def build_macro():
-    key = "macro_wb"
+    key = "macro_wb_v2"   # bump on shape change so stale caches self-invalidate
     cached = cache_get(key, 12 * 3600)
     if cached is not None:
         return cached
@@ -739,7 +761,52 @@ def build_kova(hist_cache, spy_c):
     return {"rows": rows,
             "method": ("score = 0.26*TrendStack + 0.24*Momentum(1/3/6M) + "
                        "0.24*RelStrength(vs SPY 3M) + 0.16*Prox52wHigh + "
-                       "0.10*RelVolume — fully transparent, no black box")}
+                       "0.10*RelVolume — fully transparent, no black box"),
+            "spec": SCORE_SPEC}
+
+
+# Self-documenting spec so the dashboard can explain itself instead of relying
+# on a README nobody opens. Keep in sync with score_one() above.
+SCORE_SPEC = {
+    "kind": "ranker",           # NOT a screener
+    "min_bars": 210,
+    "factors": [
+        {"w": 26, "name": "趋势结构 TrendStack", "en": "trend",
+         "how": "价 > MA20 / MA50 / MA200 各记 1 分，MA20 > MA50 再记 1 分；"
+                "满分 4 分折算百分制"},
+        {"w": 24, "name": "动量 Momentum", "en": "mom",
+         "how": "1M / 3M / 6M 收益率取均值 blend，得分 = 50 + blend×1.6（截断 0–100）"},
+        {"w": 24, "name": "相对强弱 RS vs SPY", "en": "rs",
+         "how": "近 3 个月自身涨幅 − SPY 同期涨幅 = rel3，得分 = 50 + rel3×2.2"},
+        {"w": 16, "name": "距 52 周高点 Prox", "en": "prox",
+         "how": "dd = 现价/52周最高 − 1（负数），得分 = 100 + dd×100×3.2"},
+        {"w": 10, "name": "相对量能 RelVol", "en": "vol",
+         "how": "今日成交量 ÷ 前 20 日均量 ×100 = relvol，得分 = 30 + (relvol−60)×0.55"},
+    ],
+    "health": [
+        {"tag": "REDUCE", "rule": "跌破 MA200 **且** 近 3 个月跑输 SPY —— 真的坏了"},
+        {"tag": "Watch", "rule": "跌破 MA200（但没跑输指数），或距 52 周高点回撤 > 20%"},
+        {"tag": "Weak", "rule": "跌破 MA50"},
+        {"tag": "Healthy", "rule": "以上都不满足，均线结构完好"},
+    ],
+    "caveat": ("健康度只看趋势结构、不单看距高点：一只 3 个月涨 60% 的高波动股"
+               "即便离峰值 −35% 也不该被判 REDUCE。"),
+}
+
+
+def build_universe_doc():
+    """Pool composition, surfaced in the UI so the strategy is self-explaining."""
+    return {
+        "watchlist_groups": WATCHLIST_GROUPS,
+        "watchlist_n": len(WATCHLIST),
+        "leveraged": LEVERAGED,
+        "bench": BENCH,
+        "sectors_n": len(SECTORS),
+        "note": ("观察池是按 2026H2 主题手工拼的三块，不是全市场筛选；"
+                 "打分只回答「我池子里现在谁最强 / 谁在坏掉」，"
+                 "不回答「全市场哪只该买」。"),
+        "edit_where": "vm/collect.py 的 WATCHLIST_GROUPS / LEVERAGED",
+    }
 
 
 def build_leveraged(hist_cache, spy_c):
@@ -1079,6 +1146,7 @@ def main():
         "direction": direction,
         "rotation": build_rotation(hist_cache),
         "kova": build_kova(hist_cache, spy_c),
+        "universe": build_universe_doc(),
         "leveraged": build_leveraged(hist_cache, spy_c),
         "discipline": build_discipline(state, hist_cache, direction, journal),
         "proof": build_proof(state, hist_cache),

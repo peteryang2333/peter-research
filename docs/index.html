@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kova-OSS · 市场监控面板</title>
+<meta name="description" content="Self-hosted 6-module market dashboard. No Yahoo. Free data only.">
+<style>
+:root{
+  --bg:#0b0e14; --panel:#141922; --panel2:#1b2230; --line:#242c3a;
+  --txt:#e6edf6; --dim:#8b98ad; --dim2:#5f6b7e;
+  --up:#ff4d4f; --down:#26c281;           /* 中国习惯：涨红 跌绿 */
+  --gold:#e3b341; --blue:#4d9fff; --violet:#a371f7;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--blue);text-decoration:none}
+.wrap{max-width:1240px;margin:0 auto;padding:16px}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.brand{font-size:17px;font-weight:700;letter-spacing:.3px}
+.brand span{color:var(--dim);font-weight:400;font-size:12px;margin-left:6px}
+.pill{padding:3px 10px;border-radius:999px;font-size:12px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+.pill.live{color:var(--down);border-color:#1d4d3c}
+.pill.stale{color:var(--gold);border-color:#4d431d}
+.spacer{flex:1}
+button.btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+  border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+button.btn:hover{border-color:#3a465c}
+
+/* ---------- nav ---------- */
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
+nav button{background:transparent;color:var(--dim);border:1px solid transparent;
+  padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+nav button:hover{color:var(--txt);background:var(--panel)}
+nav button.on{background:var(--panel);color:var(--txt);border-color:var(--line)}
+
+/* ---------- layout ---------- */
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.card .sub{color:var(--dim2);font-size:12px;margin-bottom:12px}
+.kpi{font-size:30px;font-weight:700;line-height:1.1}
+.kpi.sm{font-size:22px}
+.hint{color:var(--dim2);font-size:11px;margin-top:10px;line-height:1.5}
+
+/* ---------- table ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:right;color:var(--dim2);font-weight:500;font-size:11px;
+  text-transform:uppercase;letter-spacing:.4px;padding:8px 8px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+td{padding:8px;border-bottom:1px solid #1a2130;text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#171d28}
+.sym{font-weight:600}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--dim)}
+
+/* ---------- bars / badges ---------- */
+.bar{height:7px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px}
+.sub-row{display:grid;grid-template-columns:80px 1fr 42px;gap:10px;align-items:center;margin:9px 0}
+.sub-row b{font-weight:500;color:var(--dim);font-size:12px}
+.sub-row s{text-decoration:none;text-align:right;font-variant-numeric:tabular-nums;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.b-healthy{background:#12301f;color:#3ddc84}
+.b-watch{background:#33290f;color:var(--gold)}
+.b-weak{background:#331d0f;color:#ff9f45}
+.b-reduce{background:#3a1418;color:#ff6b6b}
+.b-lead{background:#3a1418;color:#ff7b7b}
+.b-weaken{background:#33290f;color:var(--gold)}
+.b-lag{background:#12301f;color:#3ddc84}
+.b-improve{background:#122a3a;color:#5bb8ff}
+.score{display:inline-block;min-width:34px;padding:2px 6px;border-radius:6px;font-weight:700;font-size:12px}
+
+/* ---------- misc ---------- */
+.rowline{display:flex;justify-content:space-between;padding:6px 0;
+  border-bottom:1px solid #1a2130;font-size:13px}
+.rowline:last-child{border-bottom:none}
+.rowline span:first-child{color:var(--dim)}
+.notice{background:#161d2a;border:1px solid var(--line);border-left:3px solid var(--gold);
+  border-radius:8px;padding:12px 14px;color:var(--dim);font-size:12.5px;line-height:1.6}
+footer{color:var(--dim2);font-size:11.5px;text-align:center;padding:24px 0 12px;line-height:1.7}
+.hidden{display:none}
+.loading{text-align:center;padding:70px 0;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">Kova-OSS<span>自建市场监控面板 · 6 模块</span></div>
+    <div class="pill" id="stamp">载入中…</div>
+    <div class="pill" id="freshness">—</div>
+    <div class="spacer"></div>
+    <button class="btn" id="refresh">刷新</button>
+  </header>
+
+  <nav id="nav"></nav>
+  <div id="app"><div class="loading">正在拉取快照…</div></div>
+
+  <footer>
+    数据源：stockanalysis.com · api.nasdaq.com · api.worldbank.org　|　<b>不使用 Yahoo / yfinance</b><br>
+    全部为公开免费数据的机械计算结果，非投资建议；是否操作由你本人决策。
+  </footer>
+</div>
+
+<script>
+/* ============================ helpers ============================ */
+const $ = (s,r=document)=>r.querySelector(s);
+const el = (h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild;};
+const n2 = (v,d=2)=> (v===null||v===undefined||isNaN(v)) ? '—' : Number(v).toFixed(d);
+const esc = (s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* 涨红跌绿 */
+function pctCls(v){ if(v===null||v===undefined||isNaN(v)) return 'flat'; return v>0?'up':(v<0?'down':'flat'); }
+function pct(v,d=2){ if(v===null||v===undefined||isNaN(v)) return '<span class="flat">—</span>';
+  const s=(v>0?'+':'')+Number(v).toFixed(d)+'%'; return `<span class="${pctCls(v)}">${s}</span>`; }
+function scoreColor(s){ if(s>=85)return '#3ddc84'; if(s>=70)return '#8bd450'; if(s>=50)return '#e3b341';
+  if(s>=30)return '#ff9f45'; return '#ff6b6b'; }
+function scoreChip(s){ const c=scoreColor(s);
+  return `<span class="score" style="background:${c}22;color:${c}">${s}</span>`; }
+function healthBadge(h){ const m={'Healthy':'b-healthy','Watch':'b-watch','Weak':'b-weak','REDUCE':'b-reduce'};
+  return `<span class="badge ${m[h]||'b-watch'}">${esc(h)}</span>`; }
+function quadBadge(q){ const m={'Leading':'b-lead','Weakening':'b-weaken','Lagging':'b-lag','Improving':'b-improve'};
+  const cn={'Leading':'领先','Weakening':'走弱','Lagging':'落后','Improving':'改善'};
+  return `<span class="badge ${m[q]||''}">${cn[q]||q}</span>`; }
+function subBar(name,val){ const c=scoreColor(val);
+  return `<div class="sub-row"><b>${name}</b>
+    <div class="bar"><i style="width:${Math.max(2,val)}%;background:${c}"></i></div>
+    <s style="color:${c}">${val}</s></div>`; }
+
+/* ============================ state ============================ */
+let SNAP=null, PRIV=null, TAB='overview';
+const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
+            ['kova','04 打分'],['discipline','05 纪律'],['proof','06 验证']];
+
+/* ============================ modules ============================ */
+function viewOverview(s){
+  const d=s.direction, r=s.rotation, c=r.counts||{};
+  const lev=(s.leveraged||[]).slice().sort((a,b)=>b.score-a.score);
+  const top=(s.kova.rows||[]).slice(0,8);
+  return `
+  <div class="grid g3">
+    <div class="card">
+      <h3>市场姿态 Posture</h3><div class="sub">${esc(d.label)} · ${esc(d.tone)}</div>
+      <div class="kpi" style="color:${scoreColor(d.posture)}">${d.posture}<span style="font-size:14px;color:var(--dim2)"> / 100</span></div>
+      <div style="margin-top:14px">${Object.entries(d.subs).map(([k,v])=>subBar(k,v)).join('')}</div>
+    </div>
+    <div class="card">
+      <h3>板块轮动分布</h3><div class="sub">11 个 SPDR 行业 vs ${esc(r.bench||'SPY')}</div>
+      <div class="rowline"><span>领先 Leading</span><b class="up">${c.Leading||0}</b></div>
+      <div class="rowline"><span>改善 Improving</span><b style="color:var(--blue)">${c.Improving||0}</b></div>
+      <div class="rowline"><span>走弱 Weakening</span><b style="color:var(--gold)">${c.Weakening||0}</b></div>
+      <div class="rowline"><span>落后 Lagging</span><b class="down">${c.Lagging||0}</b></div>
+      <div class="hint">四象限按 JdK RS-Ratio / RS-Momentum 划分，顺时针漂移：改善→领先→走弱→落后。</div>
+    </div>
+    <div class="card">
+      <h3>杠杆 ETF 轮动池</h3><div class="sub">你的实盘策略标的池打分</div>
+      <table><tbody>${lev.map(x=>`<tr>
+        <td class="sym">${esc(x.sym)}</td>
+        <td>${pct(x.pct)}</td>
+        <td>${scoreChip(x.score)}</td>
+        <td>${healthBadge(x.health)}</td></tr>`).join('')}</tbody></table>
+      <div class="hint">分数 = 趋势 + 动量 + 相对强弱 + 距高点 + 量能，机械计算、可复核。</div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3>大盘与风险偏好</h3><div class="sub">收盘 · ${esc((d.tape[0]||{}).asof||'')}</div>
+      <table><thead><tr><th>标的</th><th>价格</th><th>日涨跌</th><th>1M</th><th>3M</th><th>vs MA50</th></tr></thead>
+      <tbody>${d.tape.map(t=>{
+        const rel = (t.price&&t.ma50)? (t.price/t.ma50-1)*100 : null;
+        return `<tr><td class="sym">${esc(t.sym)}</td><td>${n2(t.price)}</td>
+        <td>${pct(t.pct)}</td><td>${pct(t.r1m,1)}</td><td>${pct(t.r3m,1)}</td><td>${pct(rel,1)}</td></tr>`;}).join('')}
+      </tbody></table>
+    </div>
+    <div class="card">
+      <h3>观察池评分 Top 8</h3><div class="sub">共 ${(s.kova.rows||[]).length} 只</div>
+      <table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>3M vs SPY</th><th>分</th><th>状态</th></tr></thead>
+      <tbody>${top.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+        <td>${pct(x.pct)}</td><td>${pct(x.rel_spy_3m,1)}</td>
+        <td>${scoreChip(x.score)}</td><td>${healthBadge(x.health)}</td></tr>`).join('')}</tbody></table>
+    </div>
+  </div>`;
+}
+
+function viewMacro(s){
+  const m=s.macro, items=(m.items||[]).slice().sort((a,b)=>b.infl-a.infl);
+  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#26c281'}[t]||'#8b98ad');
+  const max=Math.max(...items.map(x=>Math.min(x.infl,20)),1);
+  return `
+  <div class="grid g2">
+    <div class="card"><h3>通胀最高</h3><div class="sub">World Bank CPI 年率</div>
+      <table><tbody>${(m.hottest||[]).map(x=>`<tr><td class="sym">${esc(x.name)}</td>
+        <td class="up">${n2(x.infl)}%</td><td style="color:var(--dim2)">${esc(x.year)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><h3>通胀最低</h3><div class="sub">World Bank CPI 年率</div>
+      <table><tbody>${(m.coolest||[]).map(x=>`<tr><td class="sym">${esc(x.name)}</td>
+        <td class="down">${n2(x.infl)}%</td><td style="color:var(--dim2)">${esc(x.year)}</td></tr>`).join('')}</tbody></table></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>全球通胀热度</h3><div class="sub">${esc(m.source||'World Bank')} · 共 ${items.length} 个经济体（条形上限 20% 便于比较）</div>
+    ${items.map(x=>{
+      const w=Math.max(2,Math.min(x.infl,20)/max*100), c=tierColor(x.tier);
+      return `<div class="sub-row" style="grid-template-columns:130px 1fr 78px">
+        <b>${esc(x.name)}</b><div class="bar"><i style="width:${w}%;background:${c}"></i></div>
+        <s style="color:${c}">${n2(x.infl)}%</s></div>`;}).join('')}
+    <div class="hint">分层：hot &gt;10% · warm 5–10% · normal 3–5% · cool 1–3% · cold &lt;1%。年份为该国最新可得年度值。</div>
+  </div>`;
+}
+
+function viewDirection(s){
+  const d=s.direction, x=d.detail||{};
+  return `
+  <div class="grid g2">
+    <div class="card">
+      <h3>综合姿态</h3><div class="sub">${esc(d.label)} · ${esc(d.tone)}</div>
+      <div class="kpi" style="color:${scoreColor(d.posture)}">${d.posture}</div>
+      <div style="margin-top:16px">${Object.entries(d.subs).map(([k,v])=>subBar(k,v)).join('')}</div>
+      <div class="hint">${esc(d.method||'')}</div>
+    </div>
+    <div class="card">
+      <h3>计算依据（可复核）</h3><div class="sub">全部为公开数据的机械口径</div>
+      <div class="rowline"><span>SPY 现价</span><b>${n2(x.spy_px)}</b></div>
+      <div class="rowline"><span>MA20 / MA50 / MA200</span><b>${n2(x.ma20)} / ${n2(x.ma50)} / ${n2(x.ma200)}</b></div>
+      <div class="rowline"><span>宽度：站上 MA50 的样本</span><b>${x.breadth_above} / ${x.breadth_total}</b></div>
+      <div class="rowline"><span>20 日已实现波动率</span><b>${n2(x.realized_vol_20d,1)}%</b></div>
+      <div class="rowline"><span>信用：HYG/IEF 近 1 月</span><b class="${pctCls((x.credit||{}).hyg_ief_roc_1m)}">${n2((x.credit||{}).hyg_ief_roc_1m)}%</b></div>
+      <div class="rowline"><span>领涨：QQQ − SPY (1M)</span><b class="${pctCls((x.leadership||{}).qqq_vs_spy_1m)}">${n2((x.leadership||{}).qqq_vs_spy_1m)}pp</b></div>
+      <div class="rowline"><span>领涨：IWM − SPY (1M)</span><b class="${pctCls((x.leadership||{}).iwm_vs_spy_1m)}">${n2((x.leadership||{}).iwm_vs_spy_1m)}pp</b></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>大盘 / 利率 / 信用 / 加密</h3><div class="sub">收盘 · ${esc((d.tape[0]||{}).asof||'')}</div>
+    <table><thead><tr><th>标的</th><th>价格</th><th>日涨跌</th><th>1M</th><th>3M</th>
+      <th>MA50</th><th>MA200</th><th>源</th></tr></thead>
+    <tbody>${d.tape.map(t=>`<tr><td class="sym">${esc(t.sym)}</td><td>${n2(t.price)}</td>
+      <td>${pct(t.pct)}</td><td>${pct(t.r1m,1)}</td><td>${pct(t.r3m,1)}</td>
+      <td style="color:var(--dim)">${n2(t.ma50)}</td><td style="color:var(--dim)">${n2(t.ma200)}</td>
+      <td style="color:var(--dim2);font-size:11px">${esc(t.src||'')}</td></tr>`).join('')}</tbody></table>
+  </div>`;
+}
+
+/* ---- RRG: hand-rolled SVG, no chart library ---- */
+function rrgSvg(sectors){
+  const W=680,H=520,P=52;
+  const xs=sectors.flatMap(s=>s.tail.map(p=>p[0])).concat(sectors.map(s=>s.rs_ratio));
+  const ys=sectors.flatMap(s=>s.tail.map(p=>p[1])).concat(sectors.map(s=>s.rs_mom));
+  const pad=0.35;
+  let x0=Math.min(...xs)-pad, x1=Math.max(...xs)+pad, y0=Math.min(...ys)-pad, y1=Math.max(...ys)+pad;
+  const half=Math.max(100-x0,x1-100,0.8); x0=100-half; x1=100+half;
+  const halfY=Math.max(100-y0,y1-100,0.8); y0=100-halfY; y1=100+halfY;
+  const X=v=>P+(v-x0)/(x1-x0)*(W-2*P), Y=v=>H-P-(v-y0)/(y1-y0)*(H-2*P);
+  const cx=X(100), cy=Y(100);
+  const qc={Leading:'#ff6b6b',Weakening:'#e3b341',Lagging:'#26c281',Improving:'#4d9fff'};
+  let g=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;display:block;margin:0 auto">
+    <rect x="${cx}" y="${P}" width="${W-P-cx}" height="${cy-P}" fill="#ff4d4f" opacity=".05"/>
+    <rect x="${cx}" y="${cy}" width="${W-P-cx}" height="${H-P-cy}" fill="#e3b341" opacity=".05"/>
+    <rect x="${P}" y="${cy}" width="${cx-P}" height="${H-P-cy}" fill="#26c281" opacity=".05"/>
+    <rect x="${P}" y="${P}" width="${cx-P}" height="${cy-P}" fill="#4d9fff" opacity=".05"/>
+    <line x1="${P}" y1="${cy}" x2="${W-P}" y2="${cy}" stroke="#3a465c" stroke-width="1"/>
+    <line x1="${cx}" y1="${P}" x2="${cx}" y2="${H-P}" stroke="#3a465c" stroke-width="1"/>
+    <text x="${W-P-6}" y="${P+16}" fill="#ff7b7b" font-size="12" text-anchor="end">领先 Leading</text>
+    <text x="${W-P-6}" y="${H-P-6}" fill="#e3b341" font-size="12" text-anchor="end">走弱 Weakening</text>
+    <text x="${P+6}" y="${H-P-6}" fill="#3ddc84" font-size="12">落后 Lagging</text>
+    <text x="${P+6}" y="${P+16}" fill="#5bb8ff" font-size="12">改善 Improving</text>
+    <text x="${W/2}" y="${H-14}" fill="#5f6b7e" font-size="11" text-anchor="middle">RS-Ratio（相对强弱）→</text>
+    <text x="16" y="${H/2}" fill="#5f6b7e" font-size="11" transform="rotate(-90 16 ${H/2})" text-anchor="middle">RS-Momentum（动量）→</text>`;
+  for(const s of sectors){
+    const c=qc[s.quadrant]||'#8b98ad';
+    const pts=s.tail.map(p=>`${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
+    g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.6" opacity=".45"/>`;
+    s.tail.slice(0,-1).forEach(p=>{ g+=`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2" fill="${c}" opacity=".35"/>`; });
+    const px=X(s.rs_ratio), py=Y(s.rs_mom);
+    g+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="${c}" stroke="#0b0e14" stroke-width="1.5"/>
+        <text x="${(px+10).toFixed(1)}" y="${(py+4).toFixed(1)}" fill="${c}" font-size="12" font-weight="600">${esc(s.sym)}</text>`;
+  }
+  return g+'</svg>';
+}
+
+function viewRotation(s){
+  const r=s.rotation, secs=r.sectors||[];
+  const order={Leading:0,Weakening:1,Improving:2,Lagging:3};
+  const sorted=secs.slice().sort((a,b)=>(order[a.quadrant]-order[b.quadrant])||(b.rs_ratio-a.rs_ratio));
+  return `
+  <div class="card">
+    <h3>相对轮动图 RRG</h3>
+    <div class="sub">11 个 SPDR 行业 vs ${esc(r.bench||'SPY')} · 尾迹为最近 6 周轨迹（顺时针漂移）</div>
+    ${rrgSvg(secs)}
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>行业明细</h3><div class="sub">${esc(r.method||'')}</div>
+    <table><thead><tr><th>行业</th><th>代码</th><th>象限</th><th>RS-Ratio</th><th>RS-Mom</th><th>1M</th><th>3M</th></tr></thead>
+    <tbody>${sorted.map(x=>`<tr><td class="sym">${esc(x.name)}</td>
+      <td style="text-align:left;color:var(--dim)">${esc(x.sym)}</td>
+      <td style="text-align:left">${quadBadge(x.quadrant)}</td>
+      <td>${n2(x.rs_ratio)}</td><td>${n2(x.rs_mom)}</td>
+      <td>${pct(x.r1m,1)}</td><td>${pct(x.r3m,1)}</td></tr>`).join('')}</tbody></table>
+  </div>`;
+}
+
+function kovaTable(rows){
+  return `<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>相对量</th>
+    <th>1M</th><th>3M</th><th>3M vs SPY</th><th>距52周高</th><th>趋势</th><th>动量</th><th>强弱</th><th>分数</th><th>状态</th></tr></thead>
+  <tbody>${rows.map(x=>{const p=x.parts||{};return `<tr>
+    <td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+    <td style="color:${x.relvol>=150?'var(--gold)':'var(--dim)'}">${x.relvol}%</td>
+    <td>${pct(x.r1m,1)}</td><td>${pct(x.r3m,1)}</td><td>${pct(x.rel_spy_3m,1)}</td>
+    <td>${pct(x.from_52wh,1)}</td>
+    <td style="color:var(--dim)">${p.trend??'—'}</td><td style="color:var(--dim)">${p.mom??'—'}</td>
+    <td style="color:var(--dim)">${p.rs??'—'}</td>
+    <td>${scoreChip(x.score)}</td><td>${healthBadge(x.health)}</td></tr>`;}).join('')}</tbody></table>`;
+}
+
+function viewKova(s){
+  const rows=(s.kova.rows||[]).slice().sort((a,b)=>b.score-a.score);
+  const lev=(s.leveraged||[]).slice().sort((a,b)=>b.score-a.score);
+  return `
+  <div class="card"><h3>观察池打分</h3>
+    <div class="sub">${rows.length} 只 · ${esc(s.kova.method||'')}</div>${kovaTable(rows)}
+    <div class="hint">评分是<b>透明可复核</b>的机械口径（趋势 / 动量 / 相对强弱 / 距高点 / 量能加权），不是黑箱算法。
+    状态：Healthy 站稳均线 · Watch 有回撤 · Weak 跌破 MA50 · REDUCE 破 MA200 且中期弱。</div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>杠杆 ETF 轮动池</h3>
+    <div class="sub">你实盘策略的候选标的</div>${kovaTable(lev)}</div>`;
+}
+
+function viewDiscipline(s){
+  const d=(PRIV&&PRIV.discipline)||s.discipline||{};
+  const isPriv=d.private===true;
+  const sizer=`
+  <div class="card"><h3>仓位计算器</h3>
+    <div class="sub">固定百分比风险法 · 数值只在你浏览器本地计算，不上传</div>
+    <div class="grid g4" style="gap:10px">
+      <div><div class="sub">账户权益 $</div><input id="eq" type="number" value="${d.equity_base||100000}"
+        style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px"></div>
+      <div><div class="sub">单笔风险 %</div><input id="rp" type="number" step="0.1" value="${d.risk_pct||1}"
+        style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px"></div>
+      <div><div class="sub">买入价 $</div><input id="ep" type="number" step="0.01" value="174"
+        style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px"></div>
+      <div><div class="sub">止损价 $</div><input id="sp" type="number" step="0.01" value="166"
+        style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px"></div>
+    </div>
+    <div id="sizeOut" style="margin-top:14px"></div>
+    <div class="hint">${esc(d.rule||'股数 = 账户权益 × 风险% ÷ (买入价 − 止损价)')}</div>
+  </div>`;
+  const examples = (d.examples&&d.examples.length) ? `
+  <div class="card" style="margin-top:14px"><h3>当前候选的建议仓位</h3>
+    <div class="sub">基于姿态分 ${d.posture_used??'—'} 自动调节风险敞口</div>
+    <table><thead><tr><th>标的</th><th>现价</th><th>建议止损</th><th>单股风险</th><th>股数</th><th>市值</th></tr></thead>
+    <tbody>${d.examples.map(e=>`<tr><td class="sym">${esc(e.sym)}</td><td>${n2(e.price)}</td>
+      <td>${n2(e.stop)}</td><td>${n2(e.risk_per_share)}</td><td><b>${e.shares}</b></td>
+      <td>${e.notional?('$'+Number(e.notional).toLocaleString()):'—'}</td></tr>`).join('')}</tbody></table>
+  </div>` : '';
+  const priv = isPriv ? `<div class="notice" style="margin-bottom:14px">
+    <b>公开实例：账户数据不外传。</b> ${esc(d.note||'')} 你的真实权益与持仓只保留在本地 / Oracle VM 实例上，
+    公开站点永远看不到金额。上面的计算器仍可用——数值只在你浏览器里算。</div>` : '';
+  return priv+sizer+examples;
+}
+
+function viewProof(s){
+  const p=(PRIV&&PRIV.proof)||s.proof||{};
+  if(p.private===true){
+    return `<div class="notice"><b>私有模块：券商验证账本未在公开实例展示。</b><br>
+      ${esc(p.note||'')}<br><br>
+      这部分接的是你 Oracle VM 上 <code>daily-signal-bridge</code> 的真实状态
+      （<code>signal_target.json</code> / <code>equity_state.json</code>），包含真实持仓与净值，
+      因此<b>刻意不推送到公开仓库</b>。在 VM 实例上打开本页时会自动读取并显示。<br><br>
+      当前唯一公开的字段：SPY 趋势过滤 = <b class="${p.spy_trend?'up':'down'}">${p.spy_trend?'ON（多头）':'OFF（防守）'}</b></div>`;
+  }
+  const recent=p.recent||[];
+  return `
+  <div class="grid g3">
+    <div class="card"><h3>当前持仓</h3><div class="sub">来自实盘策略状态</div>
+      <div class="kpi">${esc(p.holding||'—')}</div>
+      <div class="rowline" style="margin-top:12px"><span>权重</span><b>${p.weight!=null?(p.weight*100).toFixed(0)+'%':'—'}</b></div>
+      <div class="rowline"><span>现金</span><b>${p.cash!=null?(p.cash*100).toFixed(0)+'%':'—'}</b></div>
+      <div class="rowline"><span>信号日期</span><b>${esc(p.signal_date||'—')}</b></div>
+    </div>
+    <div class="card"><h3>策略状态</h3><div class="sub">趋势过滤与选优</div>
+      <div class="rowline"><span>SPY 趋势过滤</span><b class="${p.spy_trend?'up':'down'}">${p.spy_trend?'ON':'OFF'}</b></div>
+      <div class="rowline"><span>最优标的</span><b>${esc(p.best||'—')}</b></div>
+      <div class="rowline"><span>最优分数</span><b>${n2(p.best_score,3)}</b></div>
+      <div class="rowline"><span>窗口内换仓次数</span><b>${p.switches_in_window??'—'}</b></div>
+    </div>
+    <div class="card"><h3>账户</h3><div class="sub">${esc(p.verified_by||'local strategy state')}</div>
+      <div class="kpi sm">${p.peak_nlv!=null?('$'+Number(p.peak_nlv).toLocaleString()):'—'}</div>
+      <div class="sub" style="margin-top:6px">历史峰值净值</div>
+    </div>
+  </div>
+  ${recent.length?`<div class="card" style="margin-top:14px"><h3>近期轮动记录</h3>
+    <table><thead><tr><th>日期</th><th>标的</th><th>动作</th></tr></thead>
+    <tbody>${recent.map(r=>`<tr><td style="text-align:left">${esc(r.date||r[0]||'')}</td>
+      <td class="sym">${esc(r.sym||r[1]||'')}</td><td>${esc(r.action||'')}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+}
+
+/* ============================ sizer ============================ */
+function bindSizer(){
+  const calc=()=>{
+    const eq=+$('#eq').value, rp=+$('#rp').value, ep=+$('#ep').value, sp=+$('#sp').value;
+    const out=$('#sizeOut'); if(!out) return;
+    const risk=ep-sp;
+    if(!(eq>0&&rp>0&&ep>0&&risk>0)){ out.innerHTML=`<div class="notice">止损价必须低于买入价。</div>`; return; }
+    const dollarRisk=eq*rp/100, shares=Math.floor(dollarRisk/risk), notional=shares*ep;
+    const expo=notional/eq*100;
+    out.innerHTML=`<div class="grid g4" style="gap:10px">
+      <div class="card" style="padding:12px"><div class="sub">最大股数</div><div class="kpi sm">${shares.toLocaleString()}</div></div>
+      <div class="card" style="padding:12px"><div class="sub">占用市值</div><div class="kpi sm">$${Math.round(notional).toLocaleString()}</div></div>
+      <div class="card" style="padding:12px"><div class="sub">风险金额 (1R)</div><div class="kpi sm">$${Math.round(dollarRisk).toLocaleString()}</div></div>
+      <div class="card" style="padding:12px"><div class="sub">仓位占比</div>
+        <div class="kpi sm" style="color:${expo>100?'var(--up)':'var(--txt)'}">${expo.toFixed(0)}%</div></div></div>`;
+  };
+  ['eq','rp','ep','sp'].forEach(id=>{const e=$('#'+id); if(e) e.addEventListener('input',calc);});
+  calc();
+}
+
+/* ============================ render ============================ */
+const VIEWS={overview:viewOverview,macro:viewMacro,direction:viewDirection,
+             rotation:viewRotation,kova:viewKova,discipline:viewDiscipline,proof:viewProof};
+
+function renderNav(){
+  $('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===TAB?'on':''}">${l}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    TAB=b.dataset.t; location.hash=TAB; renderNav(); renderBody();});
+}
+function renderBody(){
+  if(!SNAP) return;
+  try{ $('#app').innerHTML=VIEWS[TAB](SNAP); }
+  catch(e){ $('#app').innerHTML=`<div class="notice">渲染 ${TAB} 出错：${esc(e.message)}</div>`; }
+  if(TAB==='discipline') bindSizer();
+}
+function renderStamp(){
+  $('#stamp').textContent='快照 '+(SNAP.generated_at_local||SNAP.generated_at||'—');
+  const age=(Date.now()-new Date(SNAP.generated_at).getTime())/60000;
+  const f=$('#freshness');
+  const mode=(SNAP.meta&&SNAP.meta.mode==='public')?'公开实例':'完整实例';
+  if(age<90){ f.className='pill live'; f.textContent=`${mode} · ${Math.round(age)} 分钟前`; }
+  else{ f.className='pill stale'; f.textContent=`${mode} · ${(age/60).toFixed(1)} 小时前`; }
+}
+async function load(){
+  try{
+    const r=await fetch('./snapshot.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    SNAP=await r.json();
+  }catch(e){
+    $('#app').innerHTML=`<div class="notice">无法载入 snapshot.json：${esc(e.message)}<br>
+      如果是刚部署，等待 GitHub Actions 首次运行生成快照。</div>`; return;
+  }
+  /* 私有层：只有本地/VM 实例才有这个文件，公开站点 404 后静默忽略 */
+  try{ const p=await fetch('./private.json?t='+Date.now(),{cache:'no-store'});
+       if(p.ok) PRIV=await p.json(); }catch(e){}
+  renderStamp(); renderNav(); renderBody();
+}
+TAB=(location.hash||'#overview').slice(1); if(!VIEWS[TAB]) TAB='overview';
+$('#refresh').onclick=load;
+load();
+setInterval(load,120000);
+</script>
+</body>
+</html>

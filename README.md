@@ -1,45 +1,75 @@
-# KovaView-OSS
+# Kova-OSS
 
-A free, self-hostable trading command center inspired by KovaView's six modules.
-No Yahoo Finance (so no rate-limit), no paywall.
+A self-hosted, six-module market dashboard — an open-source take on the KovaView layout.
+Static front end, no build step, no chart library, **no Yahoo / yfinance**, no API keys.
+
+**Live site:** https://peteryang2333.github.io/kova-oss/
 
 ## Modules
-1. **Macro** — global inflation/GDP heatmap (World Bank Open Data)
-2. **Direction** — one posture score from trend / breadth / credit / vol / leadership
-3. **Rotation** — RRG sector-flow map (JdK RS-Ratio vs RS-Momentum, sectors vs SPY)
-4. **Kova Score** — transparent composite rank over your watchlist (momentum+trend+relVol)
-5. **Discipline** — percent-risk position sizer + SQLite trade journal (R multiples, PF, win rate)
-6. **Proof** — broker-verified ledger via Interactive Brokers + honest leaderboard
 
-## Data sources
-- Market data: `stockanalysis.com` + `api.nasdaq.com` (primary, no key)
-- Macro: `api.worldbank.org` (no key)
-- Broker verification: IBKR Client Portal Web API (optional)
+| # | Module | What it shows | Source |
+|---|--------|---------------|--------|
+| 01 | Macro | Global CPI heat tiers, hottest / coolest economies | World Bank |
+| 02 | Direction | Posture score (Trend / Breadth / Credit / Vol / Leadership) + index, rate, credit and crypto tape | stockanalysis + nasdaq |
+| 03 | Rotation | RRG of the 11 SPDR sectors vs SPY, with 6-week tails | derived |
+| 04 | Score | Transparent composite screener (trend, momentum, relative strength, distance from high, volume) | derived |
+| 05 | Discipline | Percent-risk position sizer, computed in the browser | local |
+| 06 | Proof | Broker-verified ledger — **private, never published** | local strategy state |
 
-## Run locally
-```bash
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-streamlit run app.py --server.port 8501
-# open http://localhost:8501
+Every score is a mechanical, reproducible formula. No black box, no proprietary rating.
+
+## How it runs
+
+```
+GitHub Actions (cron)  ->  vm/collect.py --public  ->  docs/snapshot.json  ->  GitHub Pages
 ```
 
-## Deploy to Oracle Cloud (Always Free)
+- `vm/collect.py` fetches ~43 symbols in parallel (~20 s, ~30 MB RSS, stdlib + `requests` only)
+  and writes one flat `snapshot.json`.
+- `docs/index.html` is a single dependency-free file that reads that JSON. The RRG is hand-drawn
+  SVG, so the page loads instantly and works offline.
+- The workflow refreshes every 30 min during US market hours and refuses to publish a snapshot
+  that fails its privacy or completeness checks.
+
+## Privacy model
+
+The public site is built with `--public`, which strips every broker-derived figure
+(real holdings, account equity, peak NLV). The CI job asserts this before each commit and
+fails the build if anything personal appears.
+
+Personal data stays on the private instance: run the collector without `--public`, write the
+result next to the page as `private.json`, and the front end merges it in automatically.
+That file is git-ignored and only ever exists on the machine that generated it.
+
+## Run it yourself
+
 ```bash
-git clone <repo> kovaview-oss && cd kovaview-oss
-sudo bash deploy_oracle.sh
-# open http://<vm-public-ip>:8501
+pip install requests
+python vm/collect.py --public --out docs/snapshot.json
+python -m http.server -d docs 8080     # http://localhost:8080
 ```
-⚠️ On Oracle the #1 reason a port won't open is the **VCN Security List**, not the
-firewall. Add an ingress rule: TCP 8501, source 0.0.0.0/0.
 
-## Enable IBKR (broker verification)
-1. Run IBKR Client Portal Gateway (paper or live) on the VM/host, authenticate (SSO/conf code).
-2. Set `IBKR_BASE` to its URL (e.g. `http://127.0.0.1:5000` or `http://host.docker.internal:5000`).
-3. Restart the container. Modules 5/6 will reconcile live; otherwise they show demo data.
+Full instance with your own strategy state:
 
-## Notes / honesty
-- The Kova Score here is a transparent heuristic, **not** KovaView's proprietary algorithm.
-- "Proof" leaderboard is demo-only unless you wire your own IBKR account (multi-trader
-  verification would need a backend + auth — out of scope for a personal dashboard).
-- Macro shows sample data if World Bank is unreachable from the runtime.
+```bash
+python vm/collect.py \
+  --signal /path/to/signal_target.json \
+  --equity /path/to/equity_state.json \
+  --out docs/private.json
+```
+
+## Notes
+
+- Yahoo Finance is deliberately unused — it rate-limits and returns 403 for many hosts.
+  `stockanalysis.com` and `api.nasdaq.com` need no key and have been stable.
+- GitHub disables scheduled workflows in a repo with no commits for 60 days; the snapshot
+  commits themselves keep it alive.
+- Not investment advice. Mechanical output from public data — every decision is yours.
+
+MIT
+
+---
+
+Also in this repo: `app.py` + `modules/` are a Streamlit build of the same six modules,
+useful locally but too memory-hungry for a 1 GB always-free VM — which is why the
+static snapshot pipeline above is the deployed path.

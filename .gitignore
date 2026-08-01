@@ -2,5 +2,9 @@ __pycache__/
 *.pyc
 venv/
 .env
-data/journal.db
 *.log
+# private instance data - real holdings / equity, must never be committed
+docs/private.json
+data/journal.db
+vm/.cache/
+vm/web/

@@ -1,0 +1,79 @@
+name: Refresh market snapshot
+
+on:
+  schedule:
+    # US market hours (13:30-20:00 UTC) every 30 min, Mon-Fri.
+    # GitHub may delay scheduled runs during peak load; that is acceptable here.
+    - cron: '*/30 13-21 * * 1-5'
+    # One post-close run so the site is correct overnight.
+    - cron: '15 21 * * 1-5'
+    # Weekend refresh so macro / weekly RRG stay current.
+    - cron: '0 12 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install --quiet requests
+
+      - name: Collect snapshot (public mode - no personal data)
+        run: python vm/collect.py --public --out docs/snapshot.json
+
+      - name: Verify snapshot is sane and contains no private data
+        run: |
+          python - <<'PY'
+          import json, re, sys
+          raw = open("docs/snapshot.json", encoding="utf-8").read()
+          s = json.loads(raw)
+
+          # 1) privacy gate - never publish broker-derived personal figures
+          assert s["meta"].get("mode") == "public", "snapshot not built in public mode"
+          assert s["proof"].get("private") is True, "proof section not redacted"
+          assert s["discipline"].get("private") is True, "discipline section not redacted"
+          for kw in ("peak_nlv", "equity_base", "verified_by"):
+              assert kw not in raw, f"private key leaked: {kw}"
+          big = [m for m in re.findall(r"\d{6,}(?:\.\d+)?", raw) if float(m) > 500000]
+          assert not big, f"suspicious large numbers: {big[:5]}"
+
+          # 2) freshness / completeness gate - do not publish a broken snapshot
+          meta = s["meta"]
+          assert meta["fetched"] >= meta["universe"] * 0.8, \
+              f"only {meta['fetched']}/{meta['universe']} symbols fetched"
+          assert s["direction"]["tape"], "empty tape"
+          assert len(s["rotation"]["sectors"]) >= 8, "rotation incomplete"
+          assert len(s["kova"]["rows"]) >= 10, "screener incomplete"
+          print(f"OK  {meta['fetched']}/{meta['universe']} symbols | "
+                f"posture={s['direction']['posture']} | "
+                f"sectors={len(s['rotation']['sectors'])} | "
+                f"rows={len(s['kova']['rows'])} | {meta['elapsed_s']}s")
+          if meta["failed"]:
+              print("WARN missing history:", ", ".join(meta["failed"]))
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet docs/snapshot.json; then
+            echo "no change"
+          else
+            git add docs/snapshot.json
+            git commit -m "data: refresh snapshot $(date -u +'%Y-%m-%d %H:%MZ')"
+            git push
+          fi

@@ -661,24 +661,46 @@ function contribBars(c){
 }
 
 /* ---- 04 最活跃：美股交易最活跃 + 个股资金流向 ---- */
+/* composite 分数查找表：把本面板 5 因子系统分挂到任意标的 */
+function compLookup(s){
+  const m={}; (s.composite&&s.composite.rows||[]).forEach(r=>{
+    m[r.sym]={score:r.score,in_thesis:r.in_thesis,why:r.why,contrib:r.contrib,health:r.health};});
+  return m;
+}
+function starIf(c){ return (c&&c.in_thesis)?' <span style="color:var(--gold);font-size:11px" title="落在你的论点池">★</span>':''; }
 function viewMovers(s){
   const f=s.flow||{}, active=(f.most_active||[]), acc=(f.accumulation||[]);
-  const mode=window.MOVER_TAB||'active', rows=mode==='active'?active:acc;
+  const cm=compLookup(s);
+  const mode=window.MOVER_TAB||'active';
   const b1=`<button class="mtab ${mode==='active'?'on':''}" onclick="MOVER_TAB='active';renderBody()">最活跃 · 成交额</button>`;
   const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="MOVER_TAB='acc';renderBody()">吸筹榜 · 资金净流入</button>`;
-  const tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th>
-    <th>成交额(十亿$)</th><th>相对量</th><th>资金流向指数</th><th>状态</th></tr></thead>
-    <tbody>${rows.map((x,i)=>`<tr><td style="color:var(--dim2)">${i+1}</td>
-      <td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
-      <td>${n2(x.dvol_b)}</td>
-      <td style="color:${x.relvol&&x.relvol>=150?'var(--gold)':'var(--dim)'}">${x.relvol!=null?x.relvol+'%':'—'}</td>
-      <td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
-      <td style="text-align:left">${flowStateBadge(x.flow_state)}</td></tr>`).join('')}</tbody></table>`;
+  const b3=`<button class="mtab ${mode==='score'?'on':''}" onclick="MOVER_TAB='score';renderBody()">按系统分排序</button>`;
+  let tbl;
+  if(mode==='score'){
+    const rows=active.slice().sort((a,b)=>(cm[b.sym]?cm[b.sym].score:0)-(cm[a.sym]?cm[a.sym].score:0));
+    tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th><th>系统分</th><th>状态</th><th>为什么高亮</th></tr></thead>
+      <tbody>${rows.map((x,i)=>{const c=cm[x.sym]||{}; return `<tr><td style="color:var(--dim2)">${i+1}</td>
+        <td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+        <td>${c.score!=null?scoreChip(c.score):'—'}</td><td>${healthBadge(c.health)}</td>
+        <td style="text-align:left;max-width:300px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
+          ${(c.why||[]).map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`;}).join('')}</tbody></table>`;
+  } else {
+    const rows=mode==='active'?active:acc;
+    tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th>
+      <th>成交额(十亿$)</th><th>相对量</th><th>资金流向指数</th><th>状态</th><th>系统分</th></tr></thead>
+      <tbody>${rows.map((x,i)=>{const c=cm[x.sym]||{}; return `<tr><td style="color:var(--dim2)">${i+1}</td>
+        <td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+        <td>${x.dvol_b!=null?n2(x.dvol_b):'—'}</td>
+        <td style="color:${x.relvol&&x.relvol>=150?'var(--gold)':'var(--dim)'}">${x.relvol!=null?x.relvol+'%':'—'}</td>
+        <td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
+        <td style="text-align:left">${flowStateBadge(x.flow_state)}</td>
+        <td>${c.score!=null?scoreChip(c.score):'—'}</td></tr>`;}).join('')}</tbody></table>`;
+  }
   return `
   <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-    <b>美股最活跃 / 个股资金流向</b><span>${b1}${b2}</span></div>
+    <b>美股最活跃 / 个股资金流向</b><span>${b1}${b2}${b3}</span></div>
     ${tbl}
-    <div class="hint">${esc(f.method||'')}　「最活跃」按成交额（价格×成交量）排名；「吸筹榜」为近20日净量比&gt;10（涨日量占优）的个股。无雅虎、无新数据源，全从已有 OHLCV 推算。</div>
+    <div class="hint">${esc(f.method||'')}　「最活跃」按成交额排名；「吸筹榜」为近20日净量比&gt;10；「按系统分排序」把最活跃个股按本面板 5 因子复合分重排——<b>这一列就是「先打分、再选买哪个」</b>。★ = 落在你的论点池。无雅虎、全从 OHLCV + 机构共识推算。</div>
   </div>`;
 }
 
@@ -686,39 +708,49 @@ function viewMovers(s){
 function viewFlow(s){
   const inst=(s.institutional||{}), f=(s.flow||{});
   const conv=(inst.top_conviction||[]), acc=(f.accumulation||[]);
+  const cm=compLookup(s);
   const mode=window.FLOW_TAB||'inst';
   const b1=`<button class="mtab ${mode==='inst'?'on':''}" onclick="FLOW_TAB='inst';renderBody()">机构共识</button>`;
   const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="FLOW_TAB='acc';renderBody()">资金吸筹</button>`;
   const instTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>评级</th>
-    <th>买/持/卖</th><th>目标价</th><th>上行空间</th><th>共识分</th></tr></thead>
-    <tbody>${conv.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+    <th>买/持/卖</th><th>目标价</th><th>上行空间</th><th>共识分</th><th>系统分</th></tr></thead>
+    <tbody>${conv.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td>
       <td>${pct(x.pct)}</td><td style="text-align:left">${ratingBadge(x.rating_label)}</td>
       <td style="color:var(--dim)">${x.buy||0}/${x.hold||0}/${x.sell||0}</td>
       <td>${x.target?('$'+n2(x.target)):'—'}</td>
       <td class="${x.upside>0?'up':(x.upside<0?'down':'flat')}">${x.upside!=null?(x.upside>0?'+':'')+x.upside+'%':'—'}</td>
-      <td>${scoreChip(x.consensus_score)}</td></tr>`).join('')}</tbody></table>`;
-  const accTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>资金流向指数</th><th>状态</th></tr></thead>
-    <tbody>${acc.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+      <td>${scoreChip(x.consensus_score)}</td>
+      <td>${c.score!=null?scoreChip(c.score):'—'}</td></tr>`;}).join('')}</tbody></table>`;
+  const accTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>资金流向指数</th><th>状态</th><th>系统分</th></tr></thead>
+    <tbody>${acc.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}</td><td>${n2(x.price)}</td>
       <td>${pct(x.pct)}</td><td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
-      <td style="text-align:left">${flowStateBadge(x.flow_state)}</td></tr>`).join('')}</tbody></table>`;
+      <td style="text-align:left">${flowStateBadge(x.flow_state)}</td>
+      <td>${c.score!=null?scoreChip(c.score):'—'}</td></tr>`;}).join('')}</tbody></table>`;
   return `
   <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <b>机构观点 & 资金流向</b><span>${b1}${b2}</span></div>
     ${mode==='inst'?instTbl:accTbl}
-    <div class="hint">${esc((mode==='inst'?inst.method:f.method)||'')}${mode==='inst'?'\t免费源无完整 13F 聚合，机构信号以分析师共识为主、持仓%为辅。':''}</div>
+    <div class="hint">${esc((mode==='inst'?inst.method:f.method)||'')}${mode==='inst'?'\t免费源无完整 13F 聚合，机构信号以分析师共识为主、持仓%为辅。':''}　「系统分」列即本面板 5 因子复合分，可把机构共识与我们的打分放一起比对——机构喊多但系统分低，要警惕。</div>
   </div>`;
 }
 
 /* ---- 06 复合排名：多源融合打分 + 为什么高亮 ---- */
 function viewRank(s){
-  const c=(s.composite||{}), rows=(c.rows||[]).slice().sort((a,b)=>b.score-a.score);
+  const c=(s.composite||{});
+  let rows=(c.rows||[]).slice().sort((a,b)=>b.score-a.score);
+  const mine=window.RANK_THESIS==='mine';
+  if(mine) rows=rows.filter(r=>r.in_thesis);
+  const b1=`<button class="mtab ${!mine?'on':''}" onclick="RANK_THESIS='';renderBody()">全部 ${c.rows?c.rows.length:0}</button>`;
+  const b2=`<button class="mtab ${mine?'on':''}" onclick="RANK_THESIS='mine';renderBody()">只看论点池 ★</button>`;
   const spec=c.spec;
   const specHtml=spec?`<div class="sub" style="max-width:760px">${esc(spec.note)}</div>
     <div style="margin-top:8px;max-width:620px">${spec.factors.map(fr=>`<div class="sub-row"><b>${esc(fr.name)}</b>
       <div class="bar"><i style="width:${fr.w*3.4}%;background:var(--blue)"></i></div><s>${fr.w}%</s></div>`).join('')}</div>`:'';
   return `
   <div class="card"><h3>复合信号排名 · 多源融合</h3>
-    <div class="sub">${rows.length} 只 · 技术35% + 活跃10% + 资金流向20% + 机构20% + 论点15%　——　你的论点只是其中 15%，不再一票否决</div>
+    <div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>${rows.length} 只 · 技术35% + 活跃10% + 资金流向20% + 机构20% + 论点15%　——　你的论点只是其中 15%，不再一票否决</span>
+      <span>${b1}${b2}</span></div>
     ${specHtml}
     <table style="margin-top:12px"><thead><tr><th>标的</th><th>价格</th><th>日</th><th>分数</th><th>状态</th>
       <th>因子(技/活/流/机/论)</th><th>为什么高亮</th></tr></thead>

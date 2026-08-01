@@ -19,6 +19,8 @@ import argparse
 import json
 import math
 import os
+import re
+import glob
 import statistics
 import sys
 import time
@@ -257,7 +259,7 @@ def get_analyst(ticker, ttl=6 * 3600):
         return cached
     j = http_json(f"https://api.nasdaq.com/api/analyst/{ticker.upper()}/targetprice",
                   timeout=15, tries=2)
-    co = (j or {}).get("data", {}).get("consensusOverview")
+    co = ((j or {}).get("data") or {}).get("consensusOverview")
     if not co:
         return None
     buy = int(co.get("buy") or 0)
@@ -1024,7 +1026,49 @@ COMPOSITE_SPEC = {
 }
 
 
-def build_composite(hist_cache, spy_c, quotes, liquid_stocks, flow_rows, inst_rows):
+def _composite_row(sym, h, spy_c, fmap, imap, vcp_syms=None):
+    """Score one symbol with the 5-factor fusion. Shared by build_composite and
+    the VCP fusion so both paths produce identical, apples-to-apples scores."""
+    sc = score_one(sym, h, spy_c)
+    if not sc:
+        return None
+    f = fmap.get(sym, {})
+    im = imap.get(sym, {})
+    tech = sc["score"]
+    activity = f.get("activity_score", 0)
+    flow = f.get("flow_score", 50)
+    upside = im.get("upside")
+    upside_s = clamp(50 + (upside or 0) * 1.5) if upside is not None else 50
+    inst = round(0.6 * (im.get("consensus_score", 50)) + 0.4 * upside_s)
+    thesis = _thesis_score(sym)
+    composite = round(0.35 * tech + 0.10 * activity + 0.20 * flow +
+                      0.20 * inst + 0.15 * thesis)
+    strong = []
+    if thesis >= 75:
+        strong.append("契合你的云厂论点")
+    elif thesis > 0:
+        strong.append("契合你的硬件/供应链论点")
+    if (im.get("consensus_score") or 0) >= 70:
+        strong.append(f"机构看多({im.get('total')}位分析师)")
+    if upside is not None and upside >= 15:
+        strong.append(f"目标价+{upside:.0f}%")
+    if f.get("flow_state") == "Accumulation":
+        strong.append("吸筹中")
+    if activity >= 80:
+        strong.append("成交额活跃")
+    if sc["health"] == "Healthy":
+        strong.append("趋势完好")
+    return {"sym": sym, "price": sc["price"], "pct": sc["pct"],
+            "score": composite, "health": sc["health"],
+            "contrib": {"tech": tech, "activity": activity, "flow": flow,
+                        "inst": inst, "thesis": thesis},
+            "why": strong,
+            "in_thesis": thesis > 0,
+            "in_vcp": bool(vcp_syms and sym in vcp_syms)}
+
+
+def build_composite(hist_cache, spy_c, quotes, liquid_stocks, flow_rows, inst_rows,
+                    vcp_syms=None):
     fmap = {r["sym"]: r for r in flow_rows}
     imap = {r["sym"]: r for r in inst_rows}
     rows = []
@@ -1032,48 +1076,95 @@ def build_composite(hist_cache, spy_c, quotes, liquid_stocks, flow_rows, inst_ro
         h = hist_cache.get(sym)
         if not h or len(h) < 210:
             continue
-        sc = score_one(sym, h, spy_c)
-        if not sc:
-            continue
-        f = fmap.get(sym, {})
-        im = imap.get(sym, {})
-        tech = sc["score"]
-        activity = f.get("activity_score", 0)
-        flow = f.get("flow_score", 50)
-        upside = im.get("upside")
-        upside_s = clamp(50 + (upside or 0) * 1.5) if upside is not None else 50
-        inst = round(0.6 * (im.get("consensus_score", 50)) + 0.4 * upside_s)
-        thesis = _thesis_score(sym)
-        composite = round(0.35 * tech + 0.10 * activity + 0.20 * flow +
-                          0.20 * inst + 0.15 * thesis)
-        strong = []
-        if thesis >= 75:
-            strong.append("契合你的云厂论点")
-        elif thesis > 0:
-            strong.append("契合你的硬件/供应链论点")
-        if (im.get("consensus_score") or 0) >= 70:
-            strong.append(f"机构看多({im.get('total')}位分析师)")
-        if upside is not None and upside >= 15:
-            strong.append(f"目标价+{upside:.0f}%")
-        if f.get("flow_state") == "Accumulation":
-            strong.append("吸筹中")
-        if activity >= 80:
-            strong.append("成交额活跃")
-        if sc["health"] == "Healthy":
-            strong.append("趋势完好")
-        rows.append({
-            "sym": sym, "price": sc["price"], "pct": sc["pct"],
-            "score": composite, "health": sc["health"],
-            "contrib": {"tech": tech, "activity": activity, "flow": flow,
-                        "inst": inst, "thesis": thesis},
-            "why": strong,
-            "in_thesis": thesis > 0,
-        })
+        r = _composite_row(sym, h, spy_c, fmap, imap, vcp_syms)
+        if r:
+            rows.append(r)
     rows.sort(key=lambda x: -x["score"])
     return {"rows": rows,
             "method": ("复合分 = 0.35*技术 + 0.10*活跃 + 0.20*资金流向 + 0.20*机构共识"
                        " + 0.15*论点叠加；各因子0–100，透明可解释，每只票给“为什么高亮”。"),
             "spec": COMPOSITE_SPEC}
+
+
+# ----------------------------------------------------------------------------
+# VCP fusion — fold the daily Volatility-Contraction-Pattern scan into the
+# same 5-factor system so "买入前10榜 / 额外买入前10榜" get a system score + verdict.
+# ----------------------------------------------------------------------------
+def parse_vcp_txt(path):
+    """Parse a VCP screener TXT (e.g. 数据/vcp_US_20260801.txt).
+
+    Each data row: VCP分 代码 价格 RS 收缩%/5日振幅%/缩量比例% <2 未标注列>
+    突破挂单价 距突破% 距52周高% 10EMA 21EMA 吊灯止损 硬止损价.
+    The two unlabeled columns sit between the ratio group and the breakout
+    block; we skip them and read the trailing 7 fields by fixed position."""
+    txt = open(path, encoding="utf-8", errors="ignore").read()
+    m = re.search(r"VCP 扫描器 v(\d+)\s*\|\s*([0-9\-]+)\s+([0-9:]+)", txt)
+    date = m.group(2) if m else None
+    mm = re.search(r"【(🇺🇸|🇯🇵|🇰🇷)\s*([^】]+)】扫描开始", txt)
+    market = mm.group(2).strip() if mm else "美股"
+    pm = re.search(r"美股池:\s*([^\n]+)", txt)
+    pool = pm.group(1).strip() if pm else None
+    rx = re.compile(
+        r"^\s*([1-3])\s+([A-Z]{1,5})\s+([\d.]+)\s+(\d+)\s+"
+        r"([\d.]+)/([\d.]+)/([\d.]+)\s+"          # 收缩/5日振幅/缩量
+        r"([\d.]+)\s+([\d.]+)\s+"                # 2 未标注列 (跳过)
+        r"([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+"     # 突破挂单价 距突破% 距52周高%
+        r"([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*$")  # 10EMA 21EMA 吊灯 硬止损
+    cands = []
+    for line in txt.splitlines():
+        g = rx.match(line)
+        if not g:
+            continue
+        cands.append({
+            "vcp_score": int(g.group(1)), "sym": g.group(2),
+            "price": float(g.group(3)), "rs": int(g.group(4)),
+            "contraction": float(g.group(5)), "amp5": float(g.group(6)),
+            "shrink": float(g.group(7)),
+            "trigger": float(g.group(10)), "dist_breakout": float(g.group(11)),
+            "dist52": float(g.group(12)), "ema10": float(g.group(13)),
+            "ema21": float(g.group(14)), "stop_chandelier": float(g.group(15)),
+            "stop_hard": float(g.group(16)),
+        })
+    return {"date": date, "market": market, "pool": pool,
+            "n": len(cands), "candidates": cands}
+
+
+def build_vcp(vcp, hist_cache, spy_c, flow_rows, inst_rows):
+    fmap = {r["sym"]: r for r in flow_rows}
+    imap = {r["sym"]: r for r in inst_rows}
+    out = []
+    for c in vcp.get("candidates", []):
+        sym = c["sym"]
+        h = hist_cache.get(sym)
+        r = _composite_row(sym, h, spy_c, fmap, imap) if (h and len(h) >= 210) else None
+        sys_score = r["score"] if r else None
+        contrib = r["contrib"] if r else None
+        why = r["why"] if r else []
+        vs = c.get("vcp_score", 0)
+        if sys_score is None:
+            verdict = "系统分缺失(历史不足)"
+        elif vs >= 3 and sys_score >= 70:
+            verdict = "强 · 形态+系统双高"
+        elif vs >= 3 and sys_score < 55:
+            verdict = "警惕 · 形态好但系统分低"
+        elif vs == 2:
+            verdict = "中 · 次优梯队"
+        else:
+            verdict = "弱 · 仅观察"
+        combined = round((vs / 3) * 100 * 0.4 + (sys_score or 0) * 0.6) if sys_score is not None else None
+        out.append({**c, "system_score": sys_score, "contrib": contrib,
+                    "why": why, "verdict": verdict, "combined": combined})
+    out.sort(key=lambda x: (-(x.get("vcp_score") or 0),
+                            x.get("dist_breakout") or 999,
+                            -(x.get("rs") or 0)))
+    return {
+        "date": vcp.get("date"), "market": vcp.get("market"), "pool": vcp.get("pool"),
+        "n": len(out),
+        "buy_top10": out[:10], "extra_top10": out[10:20], "candidates": out,
+        "method": ("VCP 信号(分/RS/突破挂单/止损) 与 本面板 5 因子系统分"
+                   "(技术35+活跃10+资金20+机构20+论点15) 融合；"
+                   "综合 = 0.4×VCP归一 + 0.6×系统分。绿=强/红=弱，仅供研究，非投资建议。"),
+    }
 
 
 def build_universe_doc():
@@ -1368,17 +1459,38 @@ def main():
     ap.add_argument("--equity", default="/opt/daily-signal-bridge/equity_state.json")
     ap.add_argument("--nlv", default="/opt/daily-signal-bridge/daily_nlv.json",
                     help="daily NLV series written by the bridge (private only)")
-    ap.add_argument("--trades", default="/opt/peter-review/trades.json",
+    ap.add_argument("--trades", default="/opt/peter-research/trades.json",
                     help="VM-side accumulated trade journal (private only)")
     ap.add_argument("--public", action="store_true",
                     help="strip personal broker data (real holdings, NLV, equity) "
                          "so the snapshot is safe to publish on a public site")
+    ap.add_argument("--vcp", default=None,
+                    help="path to a VCP scan TXT or its directory (latest "
+                         "vcp_US_*.txt is auto-picked). Folds the daily VCP "
+                         "buy-list into the 5-factor system. Private-only signal.")
     args = ap.parse_args()
+
+    # Optional VCP scan fusion: parse the daily volatility-contraction scan so
+    # its candidates get scored by the same 5-factor system. No --vcp => skip.
+    vcp = None
+    vcp_syms = []
+    if args.vcp:
+        vp = args.vcp
+        if os.path.isdir(vp):
+            us = sorted(glob.glob(os.path.join(vp, "vcp_US_*.txt")))
+            vp = us[-1] if us else None
+        if vp and os.path.exists(vp):
+            try:
+                vcp = parse_vcp_txt(vp)
+                vcp_syms = [c["sym"] for c in vcp["candidates"]]
+            except Exception as e:
+                print("WARN parse_vcp_txt failed:", e, file=sys.stderr)
+                vcp = None
 
     t0 = time.time()
     universe = list(dict.fromkeys(
         BENCH + list(SECTORS) + CREDIT + VOLPROXY + LEVERAGED + WATCHLIST
-        + LIQUID_STOCKS + LIQUID_ETFS))
+        + LIQUID_STOCKS + LIQUID_ETFS + vcp_syms))
 
     # Parallel fetch: 6 workers keeps wall-time ~20s instead of ~115s while
     # staying polite to the free endpoints and light on a 1GB box.
@@ -1400,7 +1512,7 @@ def main():
     quotes = {}
     quote_syms = list(dict.fromkeys(
         BENCH + ["HYG", "TLT", "VIXY"] + LEVERAGED + WATCHLIST
-        + LIQUID_STOCKS + LIQUID_ETFS))
+        + LIQUID_STOCKS + LIQUID_ETFS + vcp_syms))
     with ThreadPoolExecutor(max_workers=6) as ex:
         futs = {ex.submit(get_quote, s): s for s in quote_syms}
         for fut in as_completed(futs):
@@ -1412,7 +1524,8 @@ def main():
 
     # Warm analyst-consensus cache for the liquid universe (parallel).
     with ThreadPoolExecutor(max_workers=6) as ex:
-        list(as_completed(ex.submit(get_analyst, s) for s in LIQUID_STOCKS))
+        list(as_completed(ex.submit(get_analyst, s)
+                          for s in LIQUID_STOCKS + vcp_syms))
 
     spy_c = closes_of(hist_cache.get("SPY"))
 
@@ -1431,10 +1544,11 @@ def main():
         except Exception:
             journal = None
 
-    flow = build_flow(hist_cache, quotes, LIQUID_STOCKS)
-    institutional = build_institutional(hist_cache, quotes, LIQUID_STOCKS)
-    composite = build_composite(hist_cache, spy_c, quotes, LIQUID_STOCKS,
-                                 flow["rows"], institutional["rows"])
+    EXTRA = list(dict.fromkeys(LIQUID_STOCKS + vcp_syms))
+    flow = build_flow(hist_cache, quotes, EXTRA)
+    institutional = build_institutional(hist_cache, quotes, EXTRA)
+    composite = build_composite(hist_cache, spy_c, quotes, EXTRA,
+                                 flow["rows"], institutional["rows"], vcp_syms)
 
     snap = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -1447,6 +1561,8 @@ def main():
         "flow": flow,
         "institutional": institutional,
         "composite": composite,
+        "vcp": build_vcp(vcp, hist_cache, spy_c, flow["rows"], institutional["rows"])
+                if vcp else None,
         "kova": build_kova(hist_cache, spy_c),
         "universe": build_universe_doc(),
         "leveraged": build_leveraged(hist_cache, spy_c),
@@ -1457,11 +1573,17 @@ def main():
             "fetched": len(hist_cache),
             "failed": failed,
             "elapsed_s": round(time.time() - t0, 1),
+            "vcp": vcp["date"] if vcp else None,
+            "vcp_n": len(vcp_syms),
             "sources": ["stockanalysis.com", "api.nasdaq.com (quote+analyst)",
-                        "api.worldbank.org", "local strategy state"],
+                        "api.worldbank.org", "local strategy state",
+                        "local VCP scan (--vcp)"],
             "note": "No Yahoo/yfinance (rate-limited for this account).",
         },
     }
+
+    # Surface VCP pool size in the universe doc (for the self-documenting UI).
+    snap["universe"]["vcp_n"] = len(vcp_syms)
 
     # Public mode: never let broker-derived personal figures reach a public
     # site. Keeps the rule/method (useful, non-sensitive), drops the money.

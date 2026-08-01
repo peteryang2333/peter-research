@@ -4,7 +4,7 @@ A self-hosted, multi-source signal dashboard. Static front end, no build step, n
 library, **no Yahoo / yfinance**, no API keys. Several independent signal layers are fused
 into one watch tool: your thesis is only one of five inputs, so no single opinion dominates.
 
-**Public demo:** https://peteryang2333.github.io/peter-review/
+**Public demo:** https://peteryang2333.github.io/peter-research/
 
 It runs in two flavours from the same code:
 
@@ -41,7 +41,7 @@ Every score is a mechanical, reproducible formula. No black box, no proprietary 
 
 ```
 public :  Actions cron -> collect.py --public -> docs/snapshot.json -> Pages
-private:  root cron    -> collect.py           -> /opt/peter-review/web/snapshot.json -> Caddy
+private:  root cron    -> collect.py           -> /opt/peter-research/web/snapshot.json -> Caddy
 ```
 
 - `vm/collect.py` fetches ~190 symbols (155 liquid cross-sector stocks + 26 ETFs + benchmarks

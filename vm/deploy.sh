@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync the private "Peter Review" instance to the Oracle VM and restart it.
+# Sync the private "Peter Research" instance to the Oracle VM and restart it.
 #
 #   bash vm/deploy.sh                 # push code + refresh snapshot + reload
 #   HOST=1.2.3.4 bash vm/deploy.sh    # different box
@@ -10,7 +10,7 @@ set -euo pipefail
 HOST=${HOST:-152.70.194.225}
 USER_=${USER_:-ubuntu}
 KEY=${KEY:-$HOME/.ssh/id_ed25519}
-BASE=/opt/peter-review
+BASE=/opt/peter-research
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SSHOPT=(-i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
@@ -23,10 +23,10 @@ scp "${SSHOPT[@]}" -q "$ROOT/docs/index.html" "$USER_@$HOST:$BASE/web/"
 echo "==> refreshing private snapshot + reloading Caddy"
 ssh "${SSHOPT[@]}" "$USER_@$HOST" 'bash -s' <<'REMOTE'
 set -e
-chmod +x /opt/peter-review/refresh.sh
+chmod +x /opt/peter-research/refresh.sh
 
 # --- on-demand refresh trigger (systemd) -----------------------------------
-sudo install -m 644 /opt/peter-review/peter-refreshd.service \
+sudo install -m 644 /opt/peter-research/peter-refreshd.service \
      /etc/systemd/system/peter-refreshd.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now peter-refreshd >/dev/null 2>&1 || true
@@ -34,7 +34,7 @@ sudo systemctl restart peter-refreshd
 
 # --- Caddy: route /api/* to the trigger (idempotent, preserves auth hash) ---
 sudo /usr/bin/python3 - <<'PATCH'
-p = "/opt/peter-review/Caddyfile"
+p = "/opt/peter-research/Caddyfile"
 s = orig = open(p).read()
 UPSTREAM = "reverse_proxy unix//data/refreshd.sock"
 
@@ -66,13 +66,13 @@ else:
     print("caddyfile: already up to date")
 PATCH
 
-sudo /opt/peter-review/refresh.sh
-docker exec peter-review caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
-  docker restart peter-review >/dev/null
+sudo /opt/peter-research/refresh.sh
+docker exec peter-research caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
+  docker restart peter-research >/dev/null
 echo "--- status ---"
-docker ps --filter name=peter-review --format "{{.Names}} {{.Status}}"
+docker ps --filter name=peter-research --format "{{.Names}} {{.Status}}"
 systemctl is-active peter-refreshd | sed 's/^/peter-refreshd: /'
-sudo tail -n 3 /opt/peter-review/refresh.log
+sudo tail -n 3 /opt/peter-research/refresh.log
 REMOTE
 
 echo "==> done: https://152-70-194-225.sslip.io:8443/"

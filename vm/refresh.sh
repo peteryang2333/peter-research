@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Peter Review - regenerate the private snapshot from live market data plus the
+# Peter Research - regenerate the private snapshot from live market data plus the
 # real daily-signal-bridge state. Runs as root from cron so it can read the
 # bridge's docker volume.
 set -euo pipefail
 
-BASE=/opt/peter-review
+BASE=/opt/peter-research
 STATE=/var/lib/docker/volumes/vps_bridge_data/_data
 LOG=$BASE/refresh.log
 

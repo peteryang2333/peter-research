@@ -1,5 +1,5 @@
 [Unit]
-Description=Peter Review - on-demand snapshot refresh trigger
+Description=Peter Research - on-demand snapshot refresh trigger
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 # Root is required: refresh.sh reads the bridge's docker volume.
 User=root
-ExecStart=/usr/bin/python3 /opt/peter-review/refreshd.py
+ExecStart=/usr/bin/python3 /opt/peter-research/refreshd.py
 Restart=always
 RestartSec=5
 # This box has 1 GB total - keep the daemon (and the collector it spawns) boxed in.

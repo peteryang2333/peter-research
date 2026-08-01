@@ -23,7 +23,8 @@ SIGNAL="$STATE/last_good_signal.json"
   --out    "$BASE/web/snapshot.json" \
   --signal "$SIGNAL" \
   --equity "$STATE/equity_state.json" \
-  --nlv    "$STATE/daily_nlv.json"
+  --nlv    "$STATE/daily_nlv.json" \
+  --trades "$BASE/trades.json"
 
 chmod 644 "$BASE/web/snapshot.json"
 echo "=== $(date -Is) refresh done ==="

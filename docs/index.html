@@ -70,6 +70,8 @@ tbody tr:hover{background:#171d28}
 .sub-row b{font-weight:500;color:var(--dim);font-size:12px}
 .sub-row s{text-decoration:none;text-align:right;font-variant-numeric:tabular-nums;font-size:12px}
 .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.badge.ok{background:#12301f;color:#3ddc84;border:1px solid #1e5636}
+.badge.no{background:#3a1418;color:#ff6b6b;border:1px solid #5a2230}
 .b-healthy{background:#12301f;color:#3ddc84}
 .b-watch{background:#33290f;color:var(--gold)}
 .b-weak{background:#331d0f;color:#ff9f45}
@@ -90,6 +92,13 @@ tbody tr:hover{background:#171d28}
 footer{color:var(--dim2);font-size:11.5px;text-align:center;padding:24px 0 12px;line-height:1.7}
 .hidden{display:none}
 .loading{text-align:center;padding:70px 0;color:var(--dim)}
+.mtab{padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;font-size:12px}
+.mtab.on{background:var(--up);color:#0b0e14;border-color:var(--up);font-weight:600}
+.evstrip{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.evchip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:4px 12px;font-size:12px}
+.evchip i{font-style:normal;color:var(--dim2);font-size:11px}
+.evchip i.hot{color:var(--down);font-weight:600}
+.b-ok{background:#12301f;color:#3ddc84}
 </style>
 </head>
 <body>
@@ -137,7 +146,7 @@ function subBar(name,val){ const c=scoreColor(val);
     <s style="color:${c}">${val}</s></div>`; }
 
 /* ============================ state ============================ */
-let SNAP=null, PRIV=null, TAB='overview';
+let SNAP=null, PRIV=null, TAB='overview', MACRO_METRIC='infl';
 const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
             ['kova','04 打分'],['discipline','05 纪律'],['proof','06 验证']];
 
@@ -192,27 +201,61 @@ function viewOverview(s){
   </div>`;
 }
 
+function worldMapSVG(items, metric){
+  const W=680,H=340,P=10;
+  const X=v=>P+(v+180)/360*(W-2*P);
+  const Y=v=>(90-v)/180*(H-2*P)+P;
+  const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#26c281'}[t]||'#8b98ad');
+  const vals=items.map(x=> x[metric]!=null?Math.abs(x[metric]):0);
+  const mx=Math.max(...vals,1);
+  let g=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:${W}px;margin:0 auto">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="#0b0e14" stroke="#222b3a"/>
+    <line x1="0" y1="${Y(0).toFixed(1)}" x2="${W}" y2="${Y(0).toFixed(1)}" stroke="#1c2433"/>
+    <line x1="${X(0).toFixed(1)}" y1="0" x2="${X(0).toFixed(1)}" y2="${H}" stroke="#1c2433"/>`;
+  for(const it of items){
+    const v=it[metric]; if(v==null) continue;
+    const x=X(it.lng), y=Y(it.lat);
+    const r=4+Math.min(Math.abs(v)/mx,1)*9;
+    const col= metric==='gdp' ? (v>=3?'#3ddc84':v>=1?'#e3b341':'#8b98ad') : tierColor(it.tier);
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" opacity=".82" stroke="#0b0e14" stroke-width=".5">
+      <title>${esc(it.name)} ${metric==='gdp'?'GDP ':'CPI '}${v}%</title></circle>`;
+  }
+  g+=`<text x="8" y="15" fill="#5f6b7e" font-size="11">世界宏观气泡图 · 圆点大小∝幅度</text></svg>`;
+  return g;
+}
+
 function viewMacro(s){
   const m=s.macro, items=(m.items||[]).slice().sort((a,b)=>b.infl-a.infl);
+  const metric=window.MACRO_METRIC||'infl';
   const tierColor=t=>({hot:'#ff4d4f',warm:'#ff9f45',normal:'#e3b341',cool:'#4d9fff',cold:'#26c281'}[t]||'#8b98ad');
   const max=Math.max(...items.map(x=>Math.min(x.infl,20)),1);
+  const gdpBtn=`<button class="mtab ${metric==='gdp'?'on':''}" onclick="MACRO_METRIC='gdp';renderBody()">GDP 增速</button>`;
+  const inflBtn=`<button class="mtab ${metric==='infl'?'on':''}" onclick="MACRO_METRIC='infl';renderBody()">通胀 CPI</button>`;
+  const hiList= metric==='gdp'?(m.gdp_highest||[]):(m.hottest||[]);
+  const loList= metric==='gdp'?(m.gdp_lowest||[]):(m.coolest||[]);
+  const hiVal= x=> metric==='gdp'? x.gdp : x.infl;
+  const hiYr= x=> metric==='gdp'? x.gdp_year : x.year;
   return `
-  <div class="grid g2">
-    <div class="card"><h3>通胀最高</h3><div class="sub">World Bank CPI 年率</div>
-      <table><tbody>${(m.hottest||[]).map(x=>`<tr><td class="sym">${esc(x.name)}</td>
-        <td class="up">${n2(x.infl)}%</td><td style="color:var(--dim2)">${esc(x.year)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="card"><h3>通胀最低</h3><div class="sub">World Bank CPI 年率</div>
-      <table><tbody>${(m.coolest||[]).map(x=>`<tr><td class="sym">${esc(x.name)}</td>
-        <td class="down">${n2(x.infl)}%</td><td style="color:var(--dim2)">${esc(x.year)}</td></tr>`).join('')}</tbody></table></div>
+  <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center">
+    <b>全球宏观地图</b><span>${inflBtn}${gdpBtn}</span></div>
+    ${worldMapSVG(items, metric)}
+    <div class="hint">${esc(m.source||'World Bank')} · 共 ${items.length} 个经济体。通胀按五档着色（hot&gt;10% / warm 5–10% / normal 3–5% / cool 1–3% / cold&lt;1%）；GDP 按增速着色。年份为最新可得年度。</div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h3>${metric==='gdp'?'GDP 最高':'通胀最高'}</h3><div class="sub">World Bank ${metric==='gdp'?'GDP 年率':'CPI 年率'}</div>
+      <table><tbody>${hiList.map(x=>`<tr><td class="sym">${esc(x.name)}</td>
+        <td class="up">${n2(hiVal(x))}%</td><td style="color:var(--dim2)">${esc(hiYr(x))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><h3>${metric==='gdp'?'GDP 最低':'通胀最低'}</h3><div class="sub">World Bank ${metric==='gdp'?'GDP 年率':'CPI 年率'}</div>
+      <table><tbody>${loList.map(x=>`<tr><td class="sym">${esc(x.name)}</td>
+        <td class="down">${n2(hiVal(x))}%</td><td style="color:var(--dim2)">${esc(hiYr(x))}</td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="card" style="margin-top:14px">
-    <h3>全球通胀热度</h3><div class="sub">${esc(m.source||'World Bank')} · 共 ${items.length} 个经济体（条形上限 20% 便于比较）</div>
+    <h3>全球通胀热度（列表）</h3><div class="sub">共 ${items.length} 个经济体（条形上限 20% 便于比较）</div>
     ${items.map(x=>{
       const w=Math.max(2,Math.min(x.infl,20)/max*100), c=tierColor(x.tier);
       return `<div class="sub-row" style="grid-template-columns:130px 1fr 78px">
         <b>${esc(x.name)}</b><div class="bar"><i style="width:${w}%;background:${c}"></i></div>
         <s style="color:${c}">${n2(x.infl)}%</s></div>`;}).join('')}
-    <div class="hint">分层：hot &gt;10% · warm 5–10% · normal 3–5% · cool 1–3% · cold &lt;1%。年份为该国最新可得年度值。</div>
   </div>`;
 }
 
@@ -322,7 +365,11 @@ function kovaTable(rows){
 function viewKova(s){
   const rows=(s.kova.rows||[]).slice().sort((a,b)=>b.score-a.score);
   const lev=(s.leveraged||[]).slice().sort((a,b)=>b.score-a.score);
-  return `
+  const evs=(s.events||[]);
+  const evStrip=evs.length?`<div class="card" style="margin-bottom:14px"><div class="sub">美国经济日历（倒计时）</div>
+    <div class="evstrip">${evs.map(e=>`<span class="evchip"><b>${esc(e.name)}</b> ${esc(e.date)} <i class="${e.in_days<=2?'hot':''}">${e.in_days}天</i></span>`).join('')}</div>
+    <div class="hint">CPI / 非农 / PCE 按规则推算，FOMC 取 2026 公布日程（近似）。仅作日历提醒，非交易建议。</div></div>`:'';
+  return evStrip+`
   <div class="card"><h3>观察池打分</h3>
     <div class="sub">${rows.length} 只 · ${esc(s.kova.method||'')}</div>${kovaTable(rows)}
     <div class="hint">评分是<b>透明可复核</b>的机械口径（趋势 / 动量 / 相对强弱 / 距高点 / 量能加权），不是黑箱算法。
@@ -359,10 +406,48 @@ function viewDiscipline(s){
       <td>${n2(e.stop)}</td><td>${n2(e.risk_per_share)}</td><td><b>${e.shares}</b></td>
       <td>${e.notional?('$'+Number(e.notional).toLocaleString()):'—'}</td></tr>`).join('')}</tbody></table>
   </div>` : '';
+  const j = d.journal;
+  const journalCard = (j && j.closed_n) ? `
+  <div class="card" style="margin-top:14px"><h3>交易日记账统计</h3>
+    <div class="sub">来自实盘轮动历史（VM 侧 trades.json 累积）· 仅私有实例</div>
+    <div class="grid g4" style="gap:10px">
+      <div class="kpi sm ${j.win_rate>=50?'up':'down'}">${j.win_rate!=null?j.win_rate+'%':'—'}<div class="sub">胜率</div></div>
+      <div class="kpi sm">${j.profit_factor!=null?j.profit_factor:'—'}<div class="sub">盈亏比 PF</div></div>
+      <div class="kpi sm ${j.expectancy_R>0?'up':(j.expectancy_R<0?'down':'')}">${j.expectancy_R!=null?((j.expectancy_R>0?'+':'')+j.expectancy_R+'R'):'—'}<div class="sub">期望 R</div></div>
+      <div class="kpi sm">${j.closed_n||0}<div class="sub">已平仓笔数</div></div>
+    </div>
+    <div class="grid g2" style="gap:10px;margin-top:10px">
+      <div class="rowline"><span>平均盈利</span><b class="up">${j.avg_win_R!=null?'+'+j.avg_win_R+'R':'—'}</b></div>
+      <div class="rowline"><span>平均亏损</span><b class="down">${j.avg_loss_R!=null?j.avg_loss_R+'R':'—'}</b></div>
+    </div>
+    <div class="rowline"><span>累计 R</span><b class="${j.total_R>0?'up':(j.total_R<0?'down':'flat')}">${j.total_R!=null?((j.total_R>0?'+':'')+j.total_R+'R'):'—'}</b></div>
+    ${j.open?`<div class="hint" style="margin-top:10px">当前未平仓：<b>${esc(j.open.sym)}</b> 入场 ${esc(j.open.entry)}</div>`:''}
+    ${j.recent&&j.recent.length?`<table style="margin-top:10px"><thead><tr><th>标的</th><th>入场</th><th>退出</th><th>收益</th></tr></thead>
+      <tbody>${j.recent.map(t=>`<tr><td class="sym">${esc(t.sym)}</td><td style="text-align:left">${esc(t.entry)}</td><td style="text-align:left">${esc(t.exit)}</td>
+        <td class="${t.ret>0?'up':(t.ret<0?'down':'flat')}">${t.ret!=null?((t.ret>0?'+':'')+t.ret+'%'):'—'}</td></tr>`).join('')}</tbody></table>`:''}
+  </div>` : '';
+
+  const ex = d.exit_signal;
+  const exitCard = ex ? `
+  <div class="card" style="margin-top:14px"><h3>10-EMA 退出纪律</h3>
+    <div class="sub">KovaView 规则 · 持有标的跌破 10 日 EMA 即触发减/清仓信号</div>
+    <div class="rowline"><span>标的</span><b class="sym">${esc(ex.sym)}</b></div>
+    <div class="rowline"><span>现价</span><b>$${n2(ex.price)}</b></div>
+    <div class="rowline"><span>10-EMA</span><b>$${n2(ex.ema10)}</b></div>
+    <div class="rowline"><span>状态</span><b class="${ex.above?'up':'down'}">${esc(ex.status)}</b></div>
+    <div class="hint" style="margin-top:8px">${ex.above?'价格在 EMA 上方，按纪律持有。':'价格已跌破 10-EMA，按纪律应减仓 / 离场。'}</div>
+  </div>` : '';
+
+  const heatCard = (d.heat_pct!=null) ? `
+  <div class="card" style="margin-top:14px"><h3>组合热度与当日节奏</h3>
+    <div class="sub">当前单位风险 ${d.heat_pct}% · 上限 ${d.heat_cap}%（姿态自动调节）</div>
+    <div class="rowline"><span>当日净值分布</span><b>涨 ${d.daily_pnl?d.daily_pnl.up:0} · 跌 ${d.daily_pnl?d.daily_pnl.down:0} · 平 ${d.daily_pnl?d.daily_pnl.flat:0}</b></div>
+  </div>` : '';
+
   const priv = isPriv ? `<div class="notice" style="margin-bottom:14px">
     <b>公开实例：账户数据不外传。</b> ${esc(d.note||'')} 你的真实权益与持仓只保留在本地 / Oracle VM 实例上，
     公开站点永远看不到金额。上面的计算器仍可用——数值只在你浏览器里算。</div>` : '';
-  return priv+sizer+examples;
+  return priv+sizer+examples+journalCard+exitCard+heatCard;
 }
 
 /* 净值曲线：手写 SVG，无依赖。少于 2 个点时不画。 */
@@ -409,7 +494,22 @@ function viewProof(s){
       当前唯一公开的字段：SPY 趋势过滤 = <b class="${p.spy_trend?'up':'down'}">${p.spy_trend?'ON（多头）':'OFF（防守）'}</b></div>`;
   }
   const recent=p.recent||[];
-  return `
+  const v=p.verified||{};
+  const badge=(ok,lbl)=>`<span class="badge ${ok?'ok':'no'}">${ok?'✓':'✕'} ${esc(lbl)}</span>`;
+  const consOk=v.consistency==='pass', consFail=v.consistency==='fail';
+  const verCard=`
+  <div class="card" style="margin-bottom:14px"><h3>验证徽章</h3>
+    <div class="sub">数据源真实性自检 · 仅私有实例</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+      ${badge(v.broker_linked,'券商已连接 (IBKR)')}
+      ${badge(v.snapshot_checked,'快照已校验')}
+      ${badge(consOk,'数据一致 PASS')}
+    </div>
+    <div class="rowline" style="margin-top:12px"><span>一致性自检</span>
+      <b class="${consOk?'up':(consFail?'down':'flat')}">${esc(v.consistency||'n/a')}</b></div>
+    <div class="sub" style="margin-top:6px">${v.last_update?('最后更新：'+esc(v.last_update)):''}</div>
+  </div>`;
+  return verCard+`
   <div class="grid g3">
     <div class="card"><h3>当前持仓</h3><div class="sub">来自实盘策略状态</div>
       <div class="kpi">${esc(p.holding||'—')}</div>

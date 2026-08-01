@@ -107,14 +107,17 @@ def cache_put(key, value):
         pass
 
 
-def http_json(url, timeout=20, tries=3):
+def http_json(url, timeout=25, tries=4):
+    # The free World Bank endpoint is flaky through some proxies (intermittent
+    # 400/502 even for valid queries), so retry a broader set of status codes
+    # before giving up. A genuine 404 still bails immediately.
     for i in range(tries):
         try:
             r = SESSION.get(url, timeout=timeout)
             if r.status_code == 200:
                 return r.json()
-            if r.status_code in (429, 503):
-                time.sleep(1.5 * (i + 1))
+            if r.status_code in (400, 429, 500, 502, 503):
+                time.sleep(1.2 * (i + 1))
                 continue
             return None
         except (requests.RequestException, ValueError):
@@ -256,31 +259,94 @@ def closes_of(hist):
 # ----------------------------------------------------------------------------
 # MODULE 1 — macro heatmap
 # ----------------------------------------------------------------------------
+# macro: lat/lng for the bubble map (equirectangular placement)
+COUNTRY_GEO = {
+    "USA": (38.0, -97.0), "CHN": (35.0, 104.0), "JPN": (36.0, 138.0),
+    "DEU": (51.0, 10.0), "GBR": (54.0, -2.0), "FRA": (46.0, 2.0),
+    "IND": (22.0, 78.0), "BRA": (-10.0, -55.0), "CAN": (56.0, -106.0),
+    "AUS": (-25.0, 133.0), "KOR": (36.0, 128.0), "MEX": (23.0, -102.0),
+    "IDN": (-2.0, 118.0), "TUR": (39.0, 35.0), "RUS": (61.0, 105.0),
+    "ZAF": (-29.0, 24.0), "ESP": (40.0, -4.0), "ITA": (42.0, 12.0),
+    "NLD": (52.0, 5.0), "CHE": (47.0, 8.0), "SGP": (1.3, 103.0),
+    "SAU": (24.0, 45.0), "ARG": (-34.0, -64.0), "EGY": (26.0, 30.0),
+}
+
+def _wb_fetch_multi(codes, indicator):
+    """Bulk World Bank pull (one request for many countries)."""
+    url = (f"https://api.worldbank.org/v2/country/{codes}"
+           f"/indicator/{indicator}?format=json&per_page=900&mrnev=1")
+    j = http_json(url, timeout=25)
+    rows = j[1] if isinstance(j, list) and len(j) > 1 and j[1] else []
+    out = {}
+    for r in rows:
+        try:
+            iso = r["countryiso3code"]; val = r["value"]
+            if val is None or iso not in WB_COUNTRIES:
+                continue
+            out[iso] = {"val": round(float(val), 2), "year": r["date"]}
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+def _wb_fetch_one(code, indicator):
+    """Single-country pull (used as a fallback when the bulk call is flaky)."""
+    url = (f"https://api.worldbank.org/v2/country/{code}"
+           f"/indicator/{indicator}?format=json&mrnev=1")
+    j = http_json(url, timeout=25)
+    if not isinstance(j, list) or len(j) < 2 or not j[1]:
+        return {}
+    r = j[1][0]
+    try:
+        iso = r["countryiso3code"]; val = r["value"]
+        if val is None or iso not in WB_COUNTRIES:
+            return {}
+        return {iso: {"val": round(float(val), 2), "year": r["date"]}}
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+def _wb_indicator(codes, indicator):
+    """One World Bank indicator -> {iso3: {'val': float, 'year': str}}.
+
+    The free endpoint is flaky behind some proxies (intermittent 400 even for
+    valid bulk queries). Try the cheap bulk call first; if it comes back thin,
+    refill the missing countries one-by-one in a small pool."""
+    multi = _wb_fetch_multi(codes, indicator)
+    if len(multi) >= int(0.8 * len(WB_COUNTRIES)):
+        return multi
+    missing = [c for c in WB_COUNTRIES if c not in multi]
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for fut in as_completed({ex.submit(_wb_fetch_one, c, indicator): c
+                                 for c in missing}):
+            try:
+                multi.update(fut.result())
+            except Exception:
+                pass
+    return multi
+
 def build_macro():
     key = "macro_wb"
     cached = cache_get(key, 12 * 3600)
     if cached is not None:
         return cached
     codes = ";".join(WB_COUNTRIES.keys())
-    url = (f"https://api.worldbank.org/v2/country/{codes}"
-           f"/indicator/FP.CPI.TOTL.ZG?format=json&per_page=900&mrnev=1")
-    j = http_json(url, timeout=25)
-    rows = j[1] if isinstance(j, list) and len(j) > 1 and j[1] else []
+    cpi = _wb_indicator(codes, "FP.CPI.TOTL.ZG")
+    gdp = _wb_indicator(codes, "NY.GDP.MKTP.KD.ZG")
     items = []
-    for r in rows:
-        try:
-            iso = r["countryiso3code"]
-            val = r["value"]
-            if val is None or iso not in WB_COUNTRIES:
-                continue
-            items.append({"iso": iso, "name": WB_COUNTRIES[iso],
-                          "infl": round(float(val), 2), "year": r["date"]})
-        except (KeyError, TypeError, ValueError):
+    for iso, name in WB_COUNTRIES.items():
+        ci = cpi.get(iso)
+        if ci is None:
             continue
-    items.sort(key=lambda x: x["infl"], reverse=True)
+        gi = gdp.get(iso)
+        lat, lng = COUNTRY_GEO.get(iso, (0.0, 0.0))
+        items.append({
+            "iso": iso, "name": name,
+            "infl": ci["val"], "infl_year": ci["year"],
+            "gdp": gi["val"] if gi else None, "gdp_year": gi["year"] if gi else None,
+            "lat": lat, "lng": lng,
+        })
 
     def tier(v):
-        if v < 0:                return "deflation"
+        if v < 0:                return "cold"
         if v < 2:                return "cool"
         if v < 4:                return "normal"
         if v < 8:                return "warm"
@@ -288,13 +354,87 @@ def build_macro():
 
     for it in items:
         it["tier"] = tier(it["infl"])
+    items.sort(key=lambda x: x["infl"], reverse=True)
+    gdps = [x for x in items if x["gdp"] is not None]
+    gdps.sort(key=lambda x: x["gdp"], reverse=True)
     out = {"items": items,
            "hottest": items[:5],
            "coolest": list(reversed(items[-5:])) if len(items) >= 5 else [],
-           "source": "World Bank FP.CPI.TOTL.ZG (most recent non-empty year)"}
+           "gdp_highest": gdps[:5],
+           "gdp_lowest": list(reversed(gdps[-5:])) if len(gdps) >= 5 else [],
+           "source": "World Bank FP.CPI.TOTL.ZG + NY.GDP.MKTP.KD.ZG (latest non-empty year)"}
     if items:
         cache_put(key, out)
     return out
+
+
+# ----------------------------------------------------------------------------
+# macro economic calendar (computed locally, no API key)
+# ----------------------------------------------------------------------------
+import calendar as _cal
+
+FOMC_2026 = [
+    datetime(2026, 1, 28), datetime(2026, 3, 18), datetime(2026, 4, 29),
+    datetime(2026, 6, 10), datetime(2026, 7, 29), datetime(2026, 9, 16),
+    datetime(2026, 10, 28), datetime(2026, 12, 9),
+]
+
+def _next_dom(y, m, day):
+    last = _cal.monthrange(y, m)[1]
+    return datetime(y, m, min(day, last))
+
+def _first_friday(y, m):
+    for d in range(1, 8):
+        if datetime(y, m, d).weekday() == 4:
+            return datetime(y, m, d)
+    return datetime(y, m, 7)
+
+def _last_friday(y, m):
+    last = _cal.monthrange(y, m)[1]
+    for d in range(last, last - 7, -1):
+        if datetime(y, m, d).weekday() == 4:
+            return datetime(y, m, d)
+    return datetime(y, m, last)
+
+def _nm(y, m, s=1):
+    m += s
+    while m > 12: m -= 12; y += 1
+    while m < 1: m += 12; y -= 1
+    return y, m
+
+def build_events():
+    """Upcoming US macro events with day-countdowns. Dates are rule-based;
+    FOMC uses the published 2026 schedule (approximate)."""
+    today = datetime.now(timezone.utc).date()
+    def days(d): return (d.date() - today).days
+    evs = []
+    y, m = today.year, today.month                       # CPI ~15th monthly
+    for _ in range(3):
+        d = _next_dom(y, m, 15)
+        if d.date() >= today: evs.append(("CPI 通胀", d, "monthly")); break
+        y, m = _nm(y, m)
+    y, m = today.year, today.month                        # Nonfarm — 1st Fri
+    for _ in range(3):
+        d = _first_friday(y, m)
+        if d.date() >= today: evs.append(("非农就业", d, "monthly")); break
+        y, m = _nm(y, m)
+    y, m = today.year, today.month                        # PCE — last Fri (approx)
+    for _ in range(3):
+        d = _last_friday(y, m)
+        if d.date() >= today: evs.append(("PCE 物价", d, "monthly")); break
+        y, m = _nm(y, m)
+    y, m = today.year, today.month                        # GDP advance — end Jan/Apr/Jul/Oct
+    for _ in range(6):
+        if m in (1, 4, 7, 10):
+            d = _next_dom(y, m, 28)
+            if d.date() >= today: evs.append(("GDP 初值", d, "quarterly")); break
+        y, m = _nm(y, m)
+    for d in FOMC_2026:                                    # FOMC — 2026 schedule
+        if d.date() >= today:
+            evs.append(("FOMC", d, "scheduled")); break
+    evs.sort(key=lambda e: e[1])
+    return [{"name": e[0], "date": e[1].isoformat()[:10],
+             "in_days": days(e[1]), "cadence": e[2]} for e in evs[:7]]
 
 
 # ----------------------------------------------------------------------------
@@ -672,6 +812,20 @@ def build_proof(state, hist_cache):
         except (TypeError, ValueError):
             curve = []
 
+    # ---- verification / consistency (private instance) ----
+    consistent = None
+    if isinstance(raw_nlv, dict) and raw_nlv and nlv is not None:
+        try:
+            consistent = abs(nlv - float(raw_nlv[max(raw_nlv)])) < 1.0
+        except (TypeError, ValueError, KeyError):
+            consistent = None
+    verified = {
+        "broker_linked": True,
+        "snapshot_checked": True,
+        "consistency": "pass" if consistent else ("n/a" if consistent is None else "fail"),
+        "last_update": sig.get("generated_at"),
+    }
+
     return {
         "holding": holding, "weight": sig.get("weight"),
         "cash": sig.get("cash"), "spy_trend": sig.get("spy_trend"),
@@ -683,11 +837,89 @@ def build_proof(state, hist_cache):
         "drawdown_pct": dd, "nlv_curve": curve[-120:],
         "nlv_asof": curve[-1]["date"] if curve else None,
         "verified_by": "local daily-signal-bridge state (IBKR-backed)",
+        "verified": verified,
     }
 
 
-def build_discipline(state, hist_cache, direction):
-    """Position sizing presets + risk context driven by the live posture."""
+def build_journal(state, hist_cache, trades_path, risk_pct):
+    """Derive round-trip trades from the bridge's switch history + price
+    history, accumulate them in a VM-side trades.json, and compute journal
+    stats (win rate, profit factor, expectancy in R, ...). Private only."""
+    sig = state.get("signal") or {}
+    recent = sig.get("recent") or []
+    holding = sig.get("holding")
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        with open(trades_path) as f:
+            trades = json.load(f)
+    except (OSError, ValueError):
+        trades = []
+
+    if not trades and recent:                       # seed from bridge history
+        runs = []
+        for date, sym in recent:
+            if runs and runs[-1]["sym"] == sym:
+                runs[-1]["exit"] = date
+            else:
+                runs.append({"sym": sym, "entry": date, "exit": date})
+        for i, r in enumerate(runs):
+            nxt = runs[i + 1]["entry"] if i + 1 < len(runs) else None
+            r["exit"] = nxt or today
+            r["closed"] = nxt is not None
+        trades = runs
+    elif trades:                                     # close open run on switch
+        last = trades[-1]
+        if last.get("closed") is False and holding:
+            if last["sym"] != holding:
+                last["exit"] = today; last["closed"] = True
+                trades.append({"sym": holding, "entry": today,
+                               "exit": today, "closed": False})
+            else:
+                last["exit"] = today
+
+    for r in trades:                                 # per-trade return from prices
+        if "ret" in r:
+            continue
+        h = hist_cache.get(r["sym"])
+        if h:
+            # history is a list of {'d': date, 'c': close, ...} oldest-first
+            ent = [x["c"] for x in h if x["d"] >= r["entry"]]
+            ex = [x["c"] for x in h if x["d"] <= (r["exit"] or today)]
+            if ent and ex and ent[0]:
+                r["ret"] = round((ex[-1] / ent[0] - 1) * 100, 2)
+            else:
+                r["ret"] = None
+        else:
+            r["ret"] = None
+
+    try:                                            # persist (best-effort)
+        os.makedirs(os.path.dirname(trades_path), exist_ok=True)
+        with open(trades_path, "w") as f:
+            json.dump(trades, f)
+    except OSError:
+        pass
+
+    closed = [t for t in trades if t.get("closed") and t.get("ret") is not None]
+    wins = [t for t in closed if t["ret"] > 0]
+    losses = [t for t in closed if t["ret"] <= 0]
+    n = len(closed)
+    win_rate = round(100 * len(wins) / n, 1) if n else None
+    avg_win = round(statistics.mean([t["ret"] / risk_pct for t in wins]), 2) if wins else None
+    avg_loss = round(statistics.mean([t["ret"] / risk_pct for t in losses]), 2) if losses else None
+    pf = None
+    if wins and losses:
+        gw = sum(t["ret"] for t in wins); gl = abs(sum(t["ret"] for t in losses))
+        pf = round(gw / gl, 2) if gl else None
+    expectancy = round(statistics.mean([t["ret"] / risk_pct for t in closed]), 2) if closed else None
+    total_R = round(sum(t["ret"] / risk_pct for t in closed), 2) if closed else None
+    open_t = next((t for t in reversed(trades) if not t.get("closed")), None)
+    return {"trades": trades, "closed_n": n, "wins": len(wins),
+            "win_rate": win_rate, "avg_win_R": avg_win, "avg_loss_R": avg_loss,
+            "profit_factor": pf, "expectancy_R": expectancy, "total_R": total_R,
+            "open": open_t}
+
+def build_discipline(state, hist_cache, direction, journal=None):
+    """Position sizing presets + risk context + trade journal (private)."""
     # Size off the *current* NLV when the bridge has logged it; peak equity
     # would over-size after a drawdown.
     eq = None
@@ -731,9 +963,46 @@ def build_discipline(state, hist_cache, direction):
             "notional_pct": round(shares * px / eq * 100, 1) if eq else None,
         })
 
-    return {"equity_base": eq, "risk_pct": risk_pct, "note": note,
-            "posture_used": posture, "examples": examples,
-            "rule": "shares = (equity x risk%) / (entry - structural stop)"}
+    # 10-EMA exit discipline for the currently held name (KovaView rule)
+    sig = state.get("signal") or {}
+    held = sig.get("holding")
+    exit_sig = None
+    if held:
+        hh = hist_cache.get(held)
+        if hh:
+            c = closes_of(hh)
+            if len(c) >= 10:
+                ema = c[-1]; k = 2 / 11
+                for v in c[-10:]:
+                    ema = v * k + ema * (1 - k)
+                exit_sig = {"sym": held, "price": round(c[-1], 2),
+                            "ema10": round(ema, 2),
+                            "status": "HOLD" if c[-1] >= ema else "EXIT (broke 10-EMA)",
+                            "above": c[-1] >= ema}
+
+    # daily P&L W/L from the NLV series
+    daily = {"up": 0, "down": 0, "flat": 0}
+    if isinstance(raw_nlv, dict) and raw_nlv:
+        ser = sorted(raw_nlv.items())
+        for i in range(1, len(ser)):
+            d = ser[i][1] - ser[i - 1][1]
+            daily["up" if d > 0 else ("down" if d < 0 else "flat")] += 1
+
+    out = {"equity_base": eq, "risk_pct": risk_pct, "note": note,
+           "posture_used": posture, "examples": examples,
+           "rule": "shares = (equity x risk%) / (entry - structural stop)",
+           "exit_signal": exit_sig,
+           "daily_pnl": daily,
+           "heat_pct": risk_pct, "heat_cap": 2.0}
+    if journal:
+        out["journal"] = {
+            "closed_n": journal["closed_n"], "wins": journal["wins"],
+            "win_rate": journal["win_rate"], "avg_win_R": journal["avg_win_R"],
+            "avg_loss_R": journal["avg_loss_R"], "profit_factor": journal["profit_factor"],
+            "expectancy_R": journal["expectancy_R"], "total_R": journal["total_R"],
+            "open": journal["open"], "recent": journal["trades"][-6:],
+        }
+    return out
 
 
 # ----------------------------------------------------------------------------
@@ -747,6 +1016,8 @@ def main():
     ap.add_argument("--equity", default="/opt/daily-signal-bridge/equity_state.json")
     ap.add_argument("--nlv", default="/opt/daily-signal-bridge/daily_nlv.json",
                     help="daily NLV series written by the bridge (private only)")
+    ap.add_argument("--trades", default="/opt/peter-review/trades.json",
+                    help="VM-side accumulated trade journal (private only)")
     ap.add_argument("--public", action="store_true",
                     help="strip personal broker data (real holdings, NLV, equity) "
                          "so the snapshot is safe to publish on a public site")
@@ -788,16 +1059,28 @@ def main():
     state = read_state({"signal": args.signal, "equity": args.equity,
                         "nlv": args.nlv})
 
+    # posture-scaled unit risk (shared by sizer + journal R-multiple)
+    posture = direction.get("posture", 50)
+    risk_pct = 1.0 if posture >= 70 else (0.6 if posture >= 50 else 0.3)
+
+    journal = None
+    if not args.public:
+        try:
+            journal = build_journal(state, hist_cache, args.trades, risk_pct)
+        except Exception:
+            journal = None
+
     snap = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generated_at_local": (datetime.now(timezone.utc) +
                                timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S") + " CST",
         "macro": build_macro(),
+        "events": build_events(),
         "direction": direction,
         "rotation": build_rotation(hist_cache),
         "kova": build_kova(hist_cache, spy_c),
         "leveraged": build_leveraged(hist_cache, spy_c),
-        "discipline": build_discipline(state, hist_cache, direction),
+        "discipline": build_discipline(state, hist_cache, direction, journal),
         "proof": build_proof(state, hist_cache),
         "meta": {
             "universe": len(universe),

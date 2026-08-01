@@ -111,7 +111,7 @@ button.btn:disabled{opacity:.55;cursor:progress}
 <div class="wrap">
 
   <header>
-    <div class="brand">Peter Review<span>我的实盘信号面板 · 6 模块</span></div>
+    <div class="brand">Peter Review<span>多源信号融合 · 看盘面板</span></div>
     <div class="pill" id="stamp">载入中…</div>
     <div class="pill" id="freshness">—</div>
     <div class="spacer"></div>
@@ -154,8 +154,10 @@ function subBar(name,val){ const c=scoreColor(val);
 
 /* ============================ state ============================ */
 let SNAP=null, PRIV=null, TAB='overview', MACRO_METRIC='infl';
+let MOVER_TAB='active', FLOW_TAB='inst';
 const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
-            ['kova','04 打分'],['discipline','05 纪律'],['proof','06 验证']];
+            ['movers','04 最活跃'],['flow','05 资金·机构'],['rank','06 复合排名'],
+            ['kova','07 打分'],['discipline','08 纪律'],['proof','09 验证']];
 
 /* ============================ modules ============================ */
 function viewOverview(s){
@@ -203,9 +205,21 @@ function viewOverview(s){
       <table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>3M vs SPY</th><th>分</th><th>状态</th></tr></thead>
       <tbody>${top.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
         <td>${pct(x.pct)}</td><td>${pct(x.rel_spy_3m,1)}</td>
-        <td>${scoreChip(x.score)}</td><td>${healthBadge(x.health)}</td></tr>`).join('')}</tbody></table>
+        <td>${scoreChip(x.score)}</td>      <td>${healthBadge(x.health)}</td></tr>`).join('')}</tbody></table>
     </div>
-  </div>`;
+  </div>
+
+  ${(()=>{ const top=((s.composite||{}).rows||[]).slice(0,10); if(!top.length) return '';
+    return `<div class="card" style="margin-top:14px"><h3>今日重点 · 复合信号排名 Top 10</h3>
+      <div class="sub">多源融合（技术+活跃+资金+机构+论点）· <a href="javascript:void(0)" onclick="TAB='rank';location.hash='rank';renderNav();renderBody()">看完整排名 →</a></div>
+      <table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>分数</th><th>状态</th><th>为什么高亮</th></tr></thead>
+      <tbody>${top.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+        <td>${pct(x.pct)}</td><td>${scoreChip(x.score)}</td>
+        <td>${healthBadge(x.health)}</td>
+        <td style="text-align:left;max-width:440px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
+          ${x.why.map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table>
+    </div>`; })()}
+`
 }
 
 function worldMapSVG(items, metric){
@@ -336,13 +350,16 @@ function rrgSvg(sectors){
 }
 
 function viewRotation(s){
-  const r=s.rotation, secs=r.sectors||[];
+  const r=s.rotation, all=r.sectors||[];
+  const secs=all.filter(x=>x.kind!=='etf');
+  const etfs=all.filter(x=>x.kind==='etf');
   const order={Leading:0,Weakening:1,Improving:2,Lagging:3};
   const sorted=secs.slice().sort((a,b)=>(order[a.quadrant]-order[b.quadrant])||(b.rs_ratio-a.rs_ratio));
+  const etfSorted=etfs.slice().sort((a,b)=>(order[a.quadrant]-order[b.quadrant])||(b.rs_ratio-a.rs_ratio));
   return `
   <div class="card">
-    <h3>相对轮动图 RRG</h3>
-    <div class="sub">11 个 SPDR 行业 vs ${esc(r.bench||'SPY')} · 尾迹为最近 6 周轨迹（顺时针漂移）</div>
+    <h3>相对轮动图 RRG · 行业</h3>
+    <div class="sub">${secs.length} 个 SPDR 行业 vs ${esc(r.bench||'SPY')} · 尾迹为最近 6 周轨迹（顺时针漂移）</div>
     ${rrgSvg(secs)}
   </div>
   <div class="card" style="margin-top:14px">
@@ -350,6 +367,14 @@ function viewRotation(s){
     <table><thead><tr><th>行业</th><th>代码</th><th>象限</th><th>RS-Ratio</th><th>RS-Mom</th><th>1M</th><th>3M</th></tr></thead>
     <tbody>${sorted.map(x=>`<tr><td class="sym">${esc(x.name)}</td>
       <td style="text-align:left;color:var(--dim)">${esc(x.sym)}</td>
+      <td style="text-align:left">${quadBadge(x.quadrant)}</td>
+      <td>${n2(x.rs_ratio)}</td><td>${n2(x.rs_mom)}</td>
+      <td>${pct(x.r1m,1)}</td><td>${pct(x.r3m,1)}</td></tr>`).join('')}</tbody></table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>主题 / 风格 ETF 轮动</h3><div class="sub">资金在板块之外的主题切换（半导体/软件/生物/银行/国债/黄金…）· JdK RS vs ${esc(r.bench||'SPY')}</div>
+    <table><thead><tr><th>主题ETF</th><th>象限</th><th>RS-Ratio</th><th>RS-Mom</th><th>1M</th><th>3M</th></tr></thead>
+    <tbody>${etfSorted.map(x=>`<tr><td class="sym">${esc(x.name)}</td>
       <td style="text-align:left">${quadBadge(x.quadrant)}</td>
       <td>${n2(x.rs_ratio)}</td><td>${n2(x.rs_mom)}</td>
       <td>${pct(x.r1m,1)}</td><td>${pct(x.r3m,1)}</td></tr>`).join('')}</tbody></table>
@@ -432,6 +457,16 @@ function methodCard(s){
       <h3 style="margin:18px 0 2px">③ 健康度怎么判 · 只看结构</h3>
       <div style="margin-top:6px">${healthHtml}</div>
       <div class="hint">${esc((spec&&spec.caveat)||'')}</div>
+
+      <h3 style="margin:18px 0 2px">④ 第二层池 + 复合融合排名（多源，不只你的论点）</h3>
+      <div class="sub">怕「论点不全」？再加三层独立信号互相补充</div>
+      <div class="notice" style="border-left-color:var(--violet)">
+        除上面的手工主题池外，还纳入 <b>${(u&&u.liquid_n)||0} 只跨行业流动性股票 + ${(u&&u.liquid_etf_n)||0} 只 ETF</b> 作为第二层池（覆盖 11 个 GICS 行业 + 主题/风格 ETF），
+        用来抓「交易最活跃 / 资金在往哪流 / 机构在买什么」，不依赖你个人的判断。<br><br>
+        <b>复合分 = 0.35·技术 + 0.10·活跃 + 0.20·资金流向 + 0.20·机构共识 + 0.15·论点叠加。</b><br>
+        你的论点只是 5 个输入里的 1 个（权重 15%），<b>不再一票否决</b>；单一信号偏弱不会掩盖其他信号，
+        多源互补降低「论点不全 / 看错」的风险。每只票都给出「为什么高亮」的理由清单（见 06 复合排名）。
+      </div>
 
       <div class="notice" style="margin-top:14px">
         <b>已知边界：</b>① 需要至少 ${(spec&&spec.min_bars)||210} 根日线，次新股不打分；
@@ -605,6 +640,98 @@ function viewProof(s){
       <td class="sym">${esc(r.sym||r[1]||'')}</td><td>${esc(r.action||'')}</td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
 
+/* ---- new-module badges ---- */
+function flowStateBadge(st){
+  const m={'Accumulation':['b-healthy','吸筹'],'Distribution':['b-reduce','派发'],'Neutral':['b-watch','中性']};
+  const [cls,cn]=m[st]||['b-watch',st||'—'];
+  return `<span class="badge ${cls}">${cn}</span>`;
+}
+function ratingBadge(lbl){
+  const m={'强力看多':'b-healthy','看多':'b-improve','中性':'b-watch','看空':'b-reduce'};
+  return `<span class="badge ${m[lbl]||'b-watch'}">${esc(lbl)}</span>`;
+}
+function contribBars(c){
+  if(!c) return '—';
+  const parts=[['技',c.tech],['活',c.activity],['流',c.flow],['机',c.inst],['论',c.thesis]];
+  return parts.map(([k,v])=>{
+    const col=scoreColor(v), hh=Math.max(3,Math.round(v/100*20));
+    return `<span title="${k} ${v}" style="display:inline-flex;flex-direction:column;align-items:center;margin:0 1px">
+      <span style="width:6px;height:${hh}px;background:${col};border-radius:2px;display:block"></span></span>`;
+  }).join('')+' <span style="color:var(--dim2);font-size:10px">技活流机论</span>';
+}
+
+/* ---- 04 最活跃：美股交易最活跃 + 个股资金流向 ---- */
+function viewMovers(s){
+  const f=s.flow||{}, active=(f.most_active||[]), acc=(f.accumulation||[]);
+  const mode=window.MOVER_TAB||'active', rows=mode==='active'?active:acc;
+  const b1=`<button class="mtab ${mode==='active'?'on':''}" onclick="MOVER_TAB='active';renderBody()">最活跃 · 成交额</button>`;
+  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="MOVER_TAB='acc';renderBody()">吸筹榜 · 资金净流入</button>`;
+  const tbl=`<table><thead><tr><th>#</th><th>标的</th><th>价格</th><th>日</th>
+    <th>成交额(十亿$)</th><th>相对量</th><th>资金流向指数</th><th>状态</th></tr></thead>
+    <tbody>${rows.map((x,i)=>`<tr><td style="color:var(--dim2)">${i+1}</td>
+      <td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td><td>${pct(x.pct)}</td>
+      <td>${n2(x.dvol_b)}</td>
+      <td style="color:${x.relvol&&x.relvol>=150?'var(--gold)':'var(--dim)'}">${x.relvol!=null?x.relvol+'%':'—'}</td>
+      <td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
+      <td style="text-align:left">${flowStateBadge(x.flow_state)}</td></tr>`).join('')}</tbody></table>`;
+  return `
+  <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <b>美股最活跃 / 个股资金流向</b><span>${b1}${b2}</span></div>
+    ${tbl}
+    <div class="hint">${esc(f.method||'')}　「最活跃」按成交额（价格×成交量）排名；「吸筹榜」为近20日净量比&gt;10（涨日量占优）的个股。无雅虎、无新数据源，全从已有 OHLCV 推算。</div>
+  </div>`;
+}
+
+/* ---- 05 资金·机构：机构共识(评级/目标价/上行) + 资金吸筹 ---- */
+function viewFlow(s){
+  const inst=(s.institutional||{}), f=(s.flow||{});
+  const conv=(inst.top_conviction||[]), acc=(f.accumulation||[]);
+  const mode=window.FLOW_TAB||'inst';
+  const b1=`<button class="mtab ${mode==='inst'?'on':''}" onclick="FLOW_TAB='inst';renderBody()">机构共识</button>`;
+  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="FLOW_TAB='acc';renderBody()">资金吸筹</button>`;
+  const instTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>评级</th>
+    <th>买/持/卖</th><th>目标价</th><th>上行空间</th><th>共识分</th></tr></thead>
+    <tbody>${conv.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+      <td>${pct(x.pct)}</td><td style="text-align:left">${ratingBadge(x.rating_label)}</td>
+      <td style="color:var(--dim)">${x.buy||0}/${x.hold||0}/${x.sell||0}</td>
+      <td>${x.target?('$'+n2(x.target)):'—'}</td>
+      <td class="${x.upside>0?'up':(x.upside<0?'down':'flat')}">${x.upside!=null?(x.upside>0?'+':'')+x.upside+'%':'—'}</td>
+      <td>${scoreChip(x.consensus_score)}</td></tr>`).join('')}</tbody></table>`;
+  const accTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>资金流向指数</th><th>状态</th></tr></thead>
+    <tbody>${acc.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+      <td>${pct(x.pct)}</td><td class="${x.flow_index>0?'up':'down'}">${x.flow_index>0?'+':''}${x.flow_index}</td>
+      <td style="text-align:left">${flowStateBadge(x.flow_state)}</td></tr>`).join('')}</tbody></table>`;
+  return `
+  <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <b>机构观点 & 资金流向</b><span>${b1}${b2}</span></div>
+    ${mode==='inst'?instTbl:accTbl}
+    <div class="hint">${esc((mode==='inst'?inst.method:f.method)||'')}${mode==='inst'?'\t免费源无完整 13F 聚合，机构信号以分析师共识为主、持仓%为辅。':''}</div>
+  </div>`;
+}
+
+/* ---- 06 复合排名：多源融合打分 + 为什么高亮 ---- */
+function viewRank(s){
+  const c=(s.composite||{}), rows=(c.rows||[]).slice().sort((a,b)=>b.score-a.score);
+  const spec=c.spec;
+  const specHtml=spec?`<div class="sub" style="max-width:760px">${esc(spec.note)}</div>
+    <div style="margin-top:8px;max-width:620px">${spec.factors.map(fr=>`<div class="sub-row"><b>${esc(fr.name)}</b>
+      <div class="bar"><i style="width:${fr.w*3.4}%;background:var(--blue)"></i></div><s>${fr.w}%</s></div>`).join('')}</div>`:'';
+  return `
+  <div class="card"><h3>复合信号排名 · 多源融合</h3>
+    <div class="sub">${rows.length} 只 · 技术35% + 活跃10% + 资金流向20% + 机构20% + 论点15%　——　你的论点只是其中 15%，不再一票否决</div>
+    ${specHtml}
+    <table style="margin-top:12px"><thead><tr><th>标的</th><th>价格</th><th>日</th><th>分数</th><th>状态</th>
+      <th>因子(技/活/流/机/论)</th><th>为什么高亮</th></tr></thead>
+    <tbody>${rows.map(x=>`<tr><td class="sym">${esc(x.sym)}</td><td>${n2(x.price)}</td>
+      <td>${pct(x.pct)}</td><td>${scoreChip(x.score)}</td>
+      <td>${healthBadge(x.health)}</td>
+      <td>${contribBars(x.contrib)}</td>
+      <td style="text-align:left;max-width:320px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
+        ${x.why.map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table>
+    <div class="hint">${esc(c.method||'')}</div>
+  </div>`;
+}
+
 /* ============================ sizer ============================ */
 function bindSizer(){
   const calc=()=>{
@@ -627,7 +754,8 @@ function bindSizer(){
 
 /* ============================ render ============================ */
 const VIEWS={overview:viewOverview,macro:viewMacro,direction:viewDirection,
-             rotation:viewRotation,kova:viewKova,discipline:viewDiscipline,proof:viewProof};
+             rotation:viewRotation,movers:viewMovers,flow:viewFlow,rank:viewRank,
+             kova:viewKova,discipline:viewDiscipline,proof:viewProof};
 
 function renderNav(){
   $('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===TAB?'on':''}">${l}</button>`).join('');

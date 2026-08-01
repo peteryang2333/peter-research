@@ -1,0 +1,737 @@
+{
+ "meta": {
+  "kind": "curated liquid universe",
+  "note": "sector-balanced; base for 'most active' ranking; user conviction names included",
+  "generated": "2026-08-01",
+  "n_stocks": 155,
+  "n_etfs": 26
+ },
+ "stocks": [
+  {
+   "t": "AAPL",
+   "s": "Technology"
+  },
+  {
+   "t": "MSFT",
+   "s": "Technology"
+  },
+  {
+   "t": "NVDA",
+   "s": "Technology"
+  },
+  {
+   "t": "AVGO",
+   "s": "Technology"
+  },
+  {
+   "t": "ORCL",
+   "s": "Technology"
+  },
+  {
+   "t": "CRM",
+   "s": "Technology"
+  },
+  {
+   "t": "ADBE",
+   "s": "Technology"
+  },
+  {
+   "t": "PYPL",
+   "s": "Technology"
+  },
+  {
+   "t": "CSCO",
+   "s": "Technology"
+  },
+  {
+   "t": "AMD",
+   "s": "Technology"
+  },
+  {
+   "t": "QCOM",
+   "s": "Technology"
+  },
+  {
+   "t": "TXN",
+   "s": "Technology"
+  },
+  {
+   "t": "AMAT",
+   "s": "Technology"
+  },
+  {
+   "t": "LRCX",
+   "s": "Technology"
+  },
+  {
+   "t": "MU",
+   "s": "Technology"
+  },
+  {
+   "t": "NOW",
+   "s": "Technology"
+  },
+  {
+   "t": "INTU",
+   "s": "Technology"
+  },
+  {
+   "t": "SNPS",
+   "s": "Technology"
+  },
+  {
+   "t": "PANW",
+   "s": "Technology"
+  },
+  {
+   "t": "CRWD",
+   "s": "Technology"
+  },
+  {
+   "t": "ZS",
+   "s": "Technology"
+  },
+  {
+   "t": "NET",
+   "s": "Technology"
+  },
+  {
+   "t": "DDOG",
+   "s": "Technology"
+  },
+  {
+   "t": "SNOW",
+   "s": "Technology"
+  },
+  {
+   "t": "PLTR",
+   "s": "Technology"
+  },
+  {
+   "t": "MDB",
+   "s": "Technology"
+  },
+  {
+   "t": "ANET",
+   "s": "Technology"
+  },
+  {
+   "t": "WDAY",
+   "s": "Technology"
+  },
+  {
+   "t": "SHOP",
+   "s": "Technology"
+  },
+  {
+   "t": "APP",
+   "s": "Technology"
+  },
+  {
+   "t": "GOOGL",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "META",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "NFLX",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "DIS",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "CMCSA",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "T",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "VZ",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "CHTR",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "EA",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "TTWO",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "TMUS",
+   "s": "Communication Svcs"
+  },
+  {
+   "t": "AMZN",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "TSLA",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "HD",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "NKE",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "MCD",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "SBUX",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "LOW",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "BKNG",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "ABNB",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "EBAY",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "ROST",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "TJX",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "MAR",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "BK",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "F",
+   "s": "Cons Disc"
+  },
+  {
+   "t": "PG",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "KO",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "PEP",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "WMT",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "COST",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "MDLZ",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "MO",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "PM",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "CL",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "KMB",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "GIS",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "KHC",
+   "s": "Cons Stap"
+  },
+  {
+   "t": "JPM",
+   "s": "Financials"
+  },
+  {
+   "t": "BAC",
+   "s": "Financials"
+  },
+  {
+   "t": "WFC",
+   "s": "Financials"
+  },
+  {
+   "t": "GS",
+   "s": "Financials"
+  },
+  {
+   "t": "MS",
+   "s": "Financials"
+  },
+  {
+   "t": "C",
+   "s": "Financials"
+  },
+  {
+   "t": "BLK",
+   "s": "Financials"
+  },
+  {
+   "t": "SCHW",
+   "s": "Financials"
+  },
+  {
+   "t": "AXP",
+   "s": "Financials"
+  },
+  {
+   "t": "SPGI",
+   "s": "Financials"
+  },
+  {
+   "t": "ICE",
+   "s": "Financials"
+  },
+  {
+   "t": "V",
+   "s": "Financials"
+  },
+  {
+   "t": "MA",
+   "s": "Financials"
+  },
+  {
+   "t": "COF",
+   "s": "Financials"
+  },
+  {
+   "t": "PNC",
+   "s": "Financials"
+  },
+  {
+   "t": "UNH",
+   "s": "Health Care"
+  },
+  {
+   "t": "JNJ",
+   "s": "Health Care"
+  },
+  {
+   "t": "LLY",
+   "s": "Health Care"
+  },
+  {
+   "t": "PFE",
+   "s": "Health Care"
+  },
+  {
+   "t": "MRK",
+   "s": "Health Care"
+  },
+  {
+   "t": "ABBV",
+   "s": "Health Care"
+  },
+  {
+   "t": "TMO",
+   "s": "Health Care"
+  },
+  {
+   "t": "ABT",
+   "s": "Health Care"
+  },
+  {
+   "t": "BMY",
+   "s": "Health Care"
+  },
+  {
+   "t": "AMGN",
+   "s": "Health Care"
+  },
+  {
+   "t": "GILD",
+   "s": "Health Care"
+  },
+  {
+   "t": "CI",
+   "s": "Health Care"
+  },
+  {
+   "t": "HUM",
+   "s": "Health Care"
+  },
+  {
+   "t": "VRTX",
+   "s": "Health Care"
+  },
+  {
+   "t": "REGN",
+   "s": "Health Care"
+  },
+  {
+   "t": "ISRG",
+   "s": "Health Care"
+  },
+  {
+   "t": "CAT",
+   "s": "Industrials"
+  },
+  {
+   "t": "DE",
+   "s": "Industrials"
+  },
+  {
+   "t": "BA",
+   "s": "Industrials"
+  },
+  {
+   "t": "GE",
+   "s": "Industrials"
+  },
+  {
+   "t": "HON",
+   "s": "Industrials"
+  },
+  {
+   "t": "UPS",
+   "s": "Industrials"
+  },
+  {
+   "t": "RTX",
+   "s": "Industrials"
+  },
+  {
+   "t": "LMT",
+   "s": "Industrials"
+  },
+  {
+   "t": "NOC",
+   "s": "Industrials"
+  },
+  {
+   "t": "GD",
+   "s": "Industrials"
+  },
+  {
+   "t": "WM",
+   "s": "Industrials"
+  },
+  {
+   "t": "FDX",
+   "s": "Industrials"
+  },
+  {
+   "t": "UNP",
+   "s": "Industrials"
+  },
+  {
+   "t": "CSX",
+   "s": "Industrials"
+  },
+  {
+   "t": "ITW",
+   "s": "Industrials"
+  },
+  {
+   "t": "ETN",
+   "s": "Industrials"
+  },
+  {
+   "t": "XOM",
+   "s": "Energy"
+  },
+  {
+   "t": "CVX",
+   "s": "Energy"
+  },
+  {
+   "t": "COP",
+   "s": "Energy"
+  },
+  {
+   "t": "SLB",
+   "s": "Energy"
+  },
+  {
+   "t": "EOG",
+   "s": "Energy"
+  },
+  {
+   "t": "OXY",
+   "s": "Energy"
+  },
+  {
+   "t": "PSX",
+   "s": "Energy"
+  },
+  {
+   "t": "VLO",
+   "s": "Energy"
+  },
+  {
+   "t": "MPC",
+   "s": "Energy"
+  },
+  {
+   "t": "KMI",
+   "s": "Energy"
+  },
+  {
+   "t": "NEE",
+   "s": "Utilities"
+  },
+  {
+   "t": "DUK",
+   "s": "Utilities"
+  },
+  {
+   "t": "SO",
+   "s": "Utilities"
+  },
+  {
+   "t": "D",
+   "s": "Utilities"
+  },
+  {
+   "t": "AEP",
+   "s": "Utilities"
+  },
+  {
+   "t": "EXC",
+   "s": "Utilities"
+  },
+  {
+   "t": "SRE",
+   "s": "Utilities"
+  },
+  {
+   "t": "LIN",
+   "s": "Materials"
+  },
+  {
+   "t": "SHW",
+   "s": "Materials"
+  },
+  {
+   "t": "APD",
+   "s": "Materials"
+  },
+  {
+   "t": "ECL",
+   "s": "Materials"
+  },
+  {
+   "t": "NEM",
+   "s": "Materials"
+  },
+  {
+   "t": "FCX",
+   "s": "Materials"
+  },
+  {
+   "t": "DOW",
+   "s": "Materials"
+  },
+  {
+   "t": "DD",
+   "s": "Materials"
+  },
+  {
+   "t": "NUE",
+   "s": "Materials"
+  },
+  {
+   "t": "VMC",
+   "s": "Materials"
+  },
+  {
+   "t": "AMT",
+   "s": "Real Estate"
+  },
+  {
+   "t": "PLD",
+   "s": "Real Estate"
+  },
+  {
+   "t": "CCI",
+   "s": "Real Estate"
+  },
+  {
+   "t": "EQIX",
+   "s": "Real Estate"
+  },
+  {
+   "t": "O",
+   "s": "Real Estate"
+  },
+  {
+   "t": "SPG",
+   "s": "Real Estate"
+  },
+  {
+   "t": "PSA",
+   "s": "Real Estate"
+  },
+  {
+   "t": "DLR",
+   "s": "Real Estate"
+  },
+  {
+   "t": "WELL",
+   "s": "Real Estate"
+  },
+  {
+   "t": "ALAB",
+   "s": "Technology"
+  },
+  {
+   "t": "GLW",
+   "s": "Technology"
+  },
+  {
+   "t": "CRDO",
+   "s": "Technology"
+  },
+  {
+   "t": "TSM",
+   "s": "Technology"
+  }
+ ],
+ "etfs": [
+  {
+   "t": "SPY",
+   "s": "ETF"
+  },
+  {
+   "t": "QQQ",
+   "s": "ETF"
+  },
+  {
+   "t": "IWM",
+   "s": "ETF"
+  },
+  {
+   "t": "XLK",
+   "s": "ETF"
+  },
+  {
+   "t": "XLF",
+   "s": "ETF"
+  },
+  {
+   "t": "XLV",
+   "s": "ETF"
+  },
+  {
+   "t": "XLE",
+   "s": "ETF"
+  },
+  {
+   "t": "XLI",
+   "s": "ETF"
+  },
+  {
+   "t": "XLY",
+   "s": "ETF"
+  },
+  {
+   "t": "XLP",
+   "s": "ETF"
+  },
+  {
+   "t": "XLU",
+   "s": "ETF"
+  },
+  {
+   "t": "XLB",
+   "s": "ETF"
+  },
+  {
+   "t": "XLC",
+   "s": "ETF"
+  },
+  {
+   "t": "XLRE",
+   "s": "ETF"
+  },
+  {
+   "t": "XBI",
+   "s": "ETF"
+  },
+  {
+   "t": "KBE",
+   "s": "ETF"
+  },
+  {
+   "t": "KRE",
+   "s": "ETF"
+  },
+  {
+   "t": "SMH",
+   "s": "ETF"
+  },
+  {
+   "t": "SOXX",
+   "s": "ETF"
+  },
+  {
+   "t": "IGV",
+   "s": "ETF"
+  },
+  {
+   "t": "ARKK",
+   "s": "ETF"
+  },
+  {
+   "t": "GLD",
+   "s": "ETF"
+  },
+  {
+   "t": "TLT",
+   "s": "ETF"
+  },
+  {
+   "t": "DBC",
+   "s": "ETF"
+  },
+  {
+   "t": "VNQ",
+   "s": "ETF"
+  },
+  {
+   "t": "FAS",
+   "s": "ETF"
+  }
+ ]
+}

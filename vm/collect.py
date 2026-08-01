@@ -85,6 +85,21 @@ WATCHLIST_GROUPS = [
 
 WATCHLIST = [s for g in WATCHLIST_GROUPS for s in g["syms"]]
 
+# Broad, sector-balanced LIQUID universe — the "most active" base pool. Curated
+# and editable via vm/liquid_universe.json (so the user can reshape the pool
+# without touching code). This is what makes the dashboard a real watch-tool
+# instead of a 23-name thematic ranker.
+def load_liquid_universe():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "liquid_universe.json")
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], []
+    return ([x["t"] for x in d.get("stocks", [])],
+            [x["t"] for x in d.get("etfs", [])])
+
+LIQUID_STOCKS, LIQUID_ETFS = load_liquid_universe()
+
 # macro: World Bank inflation, consumer prices (annual %)
 WB_COUNTRIES = {
     "USA": "United States", "CHN": "China", "JPN": "Japan", "DEU": "Germany",
@@ -202,12 +217,20 @@ def get_quote(ticker, ttl=120):
         pd_ = ((j or {}).get("data") or {}).get("primaryData") or {}
         price = _money(pd_.get("lastSalePrice"))
         if price:
+            inst_own = None
+            ks = ((j or {}).get("data") or {}).get("keyStats") or {}
+            if isinstance(ks, dict):
+                for kk, vv in ks.items():
+                    if "institutional" in str(kk).lower() and "own" in str(kk).lower():
+                        inst_own = _money(vv)
+                        break
             q = {"price": price,
                  "chg": _money(pd_.get("netChange")),
                  "pct": _money(pd_.get("percentageChange")),
                  "vol": _money(pd_.get("volume")),
                  "asof": pd_.get("lastTradeTimestamp"),
-                 "src": "nasdaq"}
+                 "src": "nasdaq",
+                 "inst_own": inst_own}
             cache_put(key, q)
             return q
     return None
@@ -223,6 +246,34 @@ def quote_or_close(ticker, hist=None):
                 "pct": h[-1].get("ch"), "vol": h[-1]["v"],
                 "asof": h[-1]["d"], "src": "close"}
     return None
+
+
+def get_analyst(ticker, ttl=6 * 3600):
+    """Nasdaq analyst consensus: buy/hold/sell split + price target.
+    Returns None on miss. This is the 'institutional thesis' signal."""
+    key = f"an_{ticker}"
+    cached = cache_get(key, ttl)
+    if cached is not None:
+        return cached
+    j = http_json(f"https://api.nasdaq.com/api/analyst/{ticker.upper()}/targetprice",
+                  timeout=15, tries=2)
+    co = (j or {}).get("data", {}).get("consensusOverview")
+    if not co:
+        return None
+    buy = int(co.get("buy") or 0)
+    hold = int(co.get("hold") or 0)
+    sell = int(co.get("sell") or 0)
+    total = buy + hold + sell
+    if total == 0:
+        return None
+    target = _money(co.get("priceTarget"))
+    out = {"buy": buy, "hold": hold, "sell": sell, "total": total,
+           "target": target,
+           "low": _money(co.get("lowPriceTarget")),
+           "high": _money(co.get("highPriceTarget")),
+           "score": round((buy * 100 + hold * 50) / total)}
+    cache_put(key, out)
+    return out
 
 
 # ----------------------------------------------------------------------------
@@ -645,7 +696,47 @@ def build_rotation(hist_cache, bench="SPY", window=12, mom_lag=4, tail=6):
 
         c = closes_of(hist_cache.get(sym))
         out.append({
-            "sym": sym, "name": name, "quadrant": quad,
+            "sym": sym, "name": name, "kind": "sector", "quadrant": quad,
+            "rs_ratio": round(r_now, 2), "rs_mom": round(m_now, 2),
+            "tail": [[round(a, 2), round(bb, 2)] for a, bb in pts],
+            "r1m": round(pct_change(c, 21), 2) if pct_change(c, 21) else None,
+            "r3m": round(pct_change(c, 63), 2) if pct_change(c, 63) else None,
+        })
+
+    # Broader theme/style ETFs — shows money rotating across themes
+    # (semis, software, biotech, banks, treasuries, gold...) not just GICS sectors.
+    for sym in LIQUID_ETFS:
+        sh = _weekly(hist_cache.get(sym))
+        n = min(len(sh), len(bh))
+        if n < window + mom_lag + tail + 2:
+            continue
+        s, b = sh[-n:], bh[-n:]
+        rs = [100.0 * s[i] / b[i] for i in range(n) if b[i]]
+        z = zscore_series(rs, window)
+        ratio = [None if v is None else 100 + v for v in z]
+        roc = [None if (i < mom_lag or rs[i - mom_lag] == 0)
+               else rs[i] / rs[i - mom_lag] * 100.0 for i in range(len(rs))]
+        roc_clean = [v for v in roc if v is not None]
+        zr = zscore_series(roc_clean, window)
+        pad = len(roc) - len(zr)
+        mom = [None] * pad + [None if v is None else 100 + v for v in zr]
+        pts = [(ratio[i], mom[i]) for i in range(len(ratio))
+               if ratio[i] is not None and i < len(mom) and mom[i] is not None]
+        if len(pts) < 2:
+            continue
+        pts = pts[-tail:]
+        r_now, m_now = pts[-1]
+        if r_now >= 100 and m_now >= 100:
+            quad = "Leading"
+        elif r_now >= 100:
+            quad = "Weakening"
+        elif m_now < 100:
+            quad = "Lagging"
+        else:
+            quad = "Improving"
+        c = closes_of(hist_cache.get(sym))
+        out.append({
+            "sym": sym, "name": sym, "kind": "etf", "quadrant": quad,
             "rs_ratio": round(r_now, 2), "rs_mom": round(m_now, 2),
             "tail": [[round(a, 2), round(bb, 2)] for a, bb in pts],
             "r1m": round(pct_change(c, 21), 2) if pct_change(c, 21) else None,
@@ -658,8 +749,10 @@ def build_rotation(hist_cache, bench="SPY", window=12, mom_lag=4, tail=6):
     for o in out:
         counts[o["quadrant"]] = counts.get(o["quadrant"], 0) + 1
     return {"bench": bench, "sectors": out, "counts": counts,
-            "method": (f"JdK-style: RS=100*sector/{bench}; RS-Ratio=100+z(RS,{window}w); "
-                       f"RS-Mom=100+z(RS {mom_lag}w RoC,{window}w); tail={tail}w")}
+            "method": (f"JdK-style RRG: RS=100*ticker/{bench}; RS-Ratio=100+z(RS,{window}w); "
+                       f"RS-Mom=100+z(RS {mom_lag}w RoC,{window}w); tail={tail}w. "
+                       f"覆盖 {sum(1 for o in out if o['kind']=='sector')} 个板块ETF + "
+                       f"{sum(1 for o in out if o['kind']=='etf')} 个主题ETF(半导体/软件/生物/银行/国债/黄金等)。")}
 
 
 # ----------------------------------------------------------------------------
@@ -794,18 +887,210 @@ SCORE_SPEC = {
 }
 
 
+# ----------------------------------------------------------------------------
+# MODULE 4b — Flow (money flow / activity) over the liquid universe
+# ----------------------------------------------------------------------------
+def _net_flow_index(hist, n=20):
+    """OBV-style net-flow ratio over last n bars, in [-100,100].
+    Positive = net accumulation (volume leaning into up-days)."""
+    h = hist[-n:] if len(hist) >= n else hist
+    if len(h) < 5:
+        return 0.0
+    net = 0.0
+    tot = 0.0
+    for i in range(1, len(h)):
+        d = h[i]["c"] - h[i - 1]["c"]
+        v = h[i]["v"] or 0
+        if d > 0:
+            net += v
+        elif d < 0:
+            net -= v
+        tot += v
+    if tot == 0:
+        return 0.0
+    return max(-100.0, min(100.0, net / tot * 100.0))
+
+
+def _dollar_vol_b(hist, quote):
+    price = (quote or {}).get("price")
+    if not price and hist:
+        price = hist[-1]["c"]
+    v = (hist[-1]["v"] if hist else 0) or 0
+    return (price * v) / 1e9  # billions
+
+
+def build_flow(hist_cache, quotes, liquid_stocks):
+    rows = []
+    for sym in liquid_stocks:
+        h = hist_cache.get(sym)
+        if not h or len(h) < 30:
+            continue
+        q = quotes.get(sym)
+        fi = _net_flow_index(h, 20)
+        vols = [r["v"] for r in h if r["v"]]
+        relvol = None
+        if len(vols) > 21:
+            avg20 = sum(vols[-21:-1]) / 20.0
+            if avg20:
+                relvol = vols[-1] / avg20 * 100.0
+        rows.append({
+            "sym": sym,
+            "price": round(q["price"], 2) if q else round(h[-1]["c"], 2),
+            "pct": round(q["pct"], 2) if q and q.get("pct") is not None else None,
+            "dvol_b": round(_dollar_vol_b(h, q), 2),
+            "relvol": round(relvol) if relvol else None,
+            "flow_index": round(fi, 1),
+            "flow_state": ("Accumulation" if fi > 10 else
+                           ("Distribution" if fi < -10 else "Neutral")),
+        })
+    rows.sort(key=lambda x: -x["dvol_b"])
+    n = len(rows)
+    for i, r in enumerate(rows):
+        r["activity_rank"] = i + 1
+        r["activity_score"] = round(100 * (n - 1 - i) / max(1, n - 1))
+        r["flow_score"] = round(clamp(50 + r["flow_index"] * 0.5))
+    return {
+        "rows": rows,
+        "most_active": rows[:30],
+        "accumulation": sorted([r for r in rows if r["flow_state"] == "Accumulation"],
+                               key=lambda x: -x["flow_index"])[:30],
+        "method": ("活跃度 = 成交额(十亿)排名；资金流向 = 近20日净量比(OBV式："
+                   "涨日量−跌日量)/总量×100；>10 吸筹 / <-10 派发。无雅虎、无新数据源，"
+                   "全从已有 OHLCV 算。"),
+    }
+
+
+# ----------------------------------------------------------------------------
+# MODULE 4c — Institutional (analyst consensus + ownership)
+# ----------------------------------------------------------------------------
+def build_institutional(hist_cache, quotes, liquid_stocks):
+    rows = []
+    for sym in liquid_stocks:
+        h = hist_cache.get(sym)
+        if not h:
+            continue
+        a = get_analyst(sym)
+        if not a:
+            continue
+        q = quotes.get(sym)
+        price = (q or {}).get("price") or h[-1]["c"]
+        upside = round((a["target"] - price) / price * 100, 1) if a["target"] else None
+        rows.append({
+            "sym": sym,
+            "price": round(price, 2),
+            "pct": round(q["pct"], 2) if q and q.get("pct") is not None else None,
+            "buy": a["buy"], "hold": a["hold"], "sell": a["sell"],
+            "total": a["total"], "target": a["target"], "upside": upside,
+            "consensus_score": a["score"],
+            "inst_own": (q or {}).get("inst_own"),
+            "rating_label": ("强力看多" if a["score"] >= 80 else
+                             "看多" if a["score"] >= 60 else
+                             "中性" if a["score"] >= 40 else "看空"),
+        })
+    rows.sort(key=lambda x: (-(x["consensus_score"] or 0),
+                             -(x["upside"] if x["upside"] is not None else -999)))
+    return {
+        "rows": rows,
+        "top_conviction": rows[:30],
+        "method": ("来源 Nasdaq 分析师共识：买入/持有/卖出分布→共识分(买=100/持有=50/卖出=0)；"
+                   "目标价上行空间=(目标价−现价)/现价；机构持仓% 尽力从 quote keyStats 取"
+                   "(免费源无完整13F聚合，故以分析师共识为主、持仓%为辅)。"),
+    }
+
+
+# ----------------------------------------------------------------------------
+# MODULE 4d — Composite fusion ranker (the "real watch tool" output)
+# ----------------------------------------------------------------------------
+def _thesis_score(sym):
+    for g in WATCHLIST_GROUPS:
+        if sym in g["syms"]:
+            return {"cloud": 100, "hardware": 75, "supply": 60}.get(g["key"], 60)
+    return 0
+
+
+COMPOSITE_SPEC = {
+    "kind": "fusion ranker",
+    "min_bars": 210,
+    "weights": {"tech": 35, "activity": 10, "flow": 20, "inst": 20, "thesis": 15},
+    "factors": [
+        {"w": 35, "name": "技术五因子", "how": "复用 Kova 五因子(趋势/动量/相对SPY/距高/量能)"},
+        {"w": 10, "name": "活跃度", "how": "全流动性池按成交额排名折算百分制"},
+        {"w": 20, "name": "资金流向", "how": "近20日净量比(OBV式)→吸筹/派发"},
+        {"w": 20, "name": "机构共识", "how": "60%分析师共识分 + 40%目标价上行空间"},
+        {"w": 15, "name": "论点叠加", "how": "云厂=100/硬件=75/供应链=60/其他=0，仅作多源之一"},
+    ],
+    "note": ("你的论点只是 5 个输入里的 1 个(权重15%)，不再一票否决；"
+             "单一信号偏弱不会掩盖其他信号，互补降低“论点不全”的风险。"),
+}
+
+
+def build_composite(hist_cache, spy_c, quotes, liquid_stocks, flow_rows, inst_rows):
+    fmap = {r["sym"]: r for r in flow_rows}
+    imap = {r["sym"]: r for r in inst_rows}
+    rows = []
+    for sym in liquid_stocks:
+        h = hist_cache.get(sym)
+        if not h or len(h) < 210:
+            continue
+        sc = score_one(sym, h, spy_c)
+        if not sc:
+            continue
+        f = fmap.get(sym, {})
+        im = imap.get(sym, {})
+        tech = sc["score"]
+        activity = f.get("activity_score", 0)
+        flow = f.get("flow_score", 50)
+        upside = im.get("upside")
+        upside_s = clamp(50 + (upside or 0) * 1.5) if upside is not None else 50
+        inst = round(0.6 * (im.get("consensus_score", 50)) + 0.4 * upside_s)
+        thesis = _thesis_score(sym)
+        composite = round(0.35 * tech + 0.10 * activity + 0.20 * flow +
+                          0.20 * inst + 0.15 * thesis)
+        strong = []
+        if thesis >= 75:
+            strong.append("契合你的云厂论点")
+        elif thesis > 0:
+            strong.append("契合你的硬件/供应链论点")
+        if (im.get("consensus_score") or 0) >= 70:
+            strong.append(f"机构看多({im.get('total')}位分析师)")
+        if upside is not None and upside >= 15:
+            strong.append(f"目标价+{upside:.0f}%")
+        if f.get("flow_state") == "Accumulation":
+            strong.append("吸筹中")
+        if activity >= 80:
+            strong.append("成交额活跃")
+        if sc["health"] == "Healthy":
+            strong.append("趋势完好")
+        rows.append({
+            "sym": sym, "price": sc["price"], "pct": sc["pct"],
+            "score": composite, "health": sc["health"],
+            "contrib": {"tech": tech, "activity": activity, "flow": flow,
+                        "inst": inst, "thesis": thesis},
+            "why": strong,
+            "in_thesis": thesis > 0,
+        })
+    rows.sort(key=lambda x: -x["score"])
+    return {"rows": rows,
+            "method": ("复合分 = 0.35*技术 + 0.10*活跃 + 0.20*资金流向 + 0.20*机构共识"
+                       " + 0.15*论点叠加；各因子0–100，透明可解释，每只票给“为什么高亮”。"),
+            "spec": COMPOSITE_SPEC}
+
+
 def build_universe_doc():
     """Pool composition, surfaced in the UI so the strategy is self-explaining."""
     return {
         "watchlist_groups": WATCHLIST_GROUPS,
         "watchlist_n": len(WATCHLIST),
+        "liquid_n": len(LIQUID_STOCKS),
+        "liquid_etf_n": len(LIQUID_ETFS),
         "leveraged": LEVERAGED,
         "bench": BENCH,
         "sectors_n": len(SECTORS),
-        "note": ("观察池是按 2026H2 主题手工拼的三块，不是全市场筛选；"
-                 "打分只回答「我池子里现在谁最强 / 谁在坏掉」，"
-                 "不回答「全市场哪只该买」。"),
-        "edit_where": "vm/collect.py 的 WATCHLIST_GROUPS / LEVERAGED",
+        "note": ("两层池：① 你的主题论点池(23只，手工)；② 跨行业流动性池"
+                 "(~155只+26ETF，可编辑)。打分有两条线——kova 只排你的论点池；"
+                 "composite 把 技术+活跃+资金流向+机构共识+你的论点 融合成全池排名，"
+                 "你的论点只是其中 15% 权重，不再一票否决。非投资建议。"),
+        "edit_where": "vm/collect.py 的 WATCHLIST_GROUPS；vm/liquid_universe.json",
     }
 
 
@@ -1092,7 +1377,8 @@ def main():
 
     t0 = time.time()
     universe = list(dict.fromkeys(
-        BENCH + list(SECTORS) + CREDIT + VOLPROXY + LEVERAGED + WATCHLIST))
+        BENCH + list(SECTORS) + CREDIT + VOLPROXY + LEVERAGED + WATCHLIST
+        + LIQUID_STOCKS + LIQUID_ETFS))
 
     # Parallel fetch: 6 workers keeps wall-time ~20s instead of ~115s while
     # staying polite to the free endpoints and light on a 1GB box.
@@ -1111,14 +1397,22 @@ def main():
                 failed.append(sym)
 
     # Warm the quote cache in parallel too (build_* then reads from cache).
+    quotes = {}
     quote_syms = list(dict.fromkeys(
-        BENCH + ["HYG", "TLT", "VIXY"] + LEVERAGED + WATCHLIST))
+        BENCH + ["HYG", "TLT", "VIXY"] + LEVERAGED + WATCHLIST
+        + LIQUID_STOCKS + LIQUID_ETFS))
     with ThreadPoolExecutor(max_workers=6) as ex:
-        for fut in [ex.submit(get_quote, s) for s in quote_syms]:
+        futs = {ex.submit(get_quote, s): s for s in quote_syms}
+        for fut in as_completed(futs):
+            s = futs[fut]
             try:
-                fut.result()
+                quotes[s] = fut.result()
             except Exception:
                 pass
+
+    # Warm analyst-consensus cache for the liquid universe (parallel).
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        list(as_completed(ex.submit(get_analyst, s) for s in LIQUID_STOCKS))
 
     spy_c = closes_of(hist_cache.get("SPY"))
 
@@ -1137,6 +1431,11 @@ def main():
         except Exception:
             journal = None
 
+    flow = build_flow(hist_cache, quotes, LIQUID_STOCKS)
+    institutional = build_institutional(hist_cache, quotes, LIQUID_STOCKS)
+    composite = build_composite(hist_cache, spy_c, quotes, LIQUID_STOCKS,
+                                 flow["rows"], institutional["rows"])
+
     snap = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generated_at_local": (datetime.now(timezone.utc) +
@@ -1145,6 +1444,9 @@ def main():
         "events": build_events(),
         "direction": direction,
         "rotation": build_rotation(hist_cache),
+        "flow": flow,
+        "institutional": institutional,
+        "composite": composite,
         "kova": build_kova(hist_cache, spy_c),
         "universe": build_universe_doc(),
         "leveraged": build_leveraged(hist_cache, spy_c),
@@ -1155,7 +1457,7 @@ def main():
             "fetched": len(hist_cache),
             "failed": failed,
             "elapsed_s": round(time.time() - t0, 1),
-            "sources": ["stockanalysis.com", "api.nasdaq.com",
+            "sources": ["stockanalysis.com", "api.nasdaq.com (quote+analyst)",
                         "api.worldbank.org", "local strategy state"],
             "note": "No Yahoo/yfinance (rate-limited for this account).",
         },

@@ -154,10 +154,11 @@ function subBar(name,val){ const c=scoreColor(val);
 
 /* ============================ state ============================ */
 let SNAP=null, PRIV=null, TAB='overview', MACRO_METRIC='infl';
-let MOVER_TAB='active', FLOW_TAB='inst';
+let MOVER_TAB='active', FLOW_TAB='inst', VCP_TAB='buy', SCAN_TAB='buy';
 const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
             ['movers','04 最活跃'],['flow','05 资金·机构'],['rank','06 复合排名'],
-            ['vcp','07 VCP融合'],['kova','08 打分'],['discipline','09 纪律'],['proof','10 验证']];
+            ['vcp','07 VCP融合'],['scan','08 全市场扫描'],['kova','09 打分'],
+            ['discipline','10 纪律'],['proof','11 验证']];
 
 /* ============================ modules ============================ */
 function viewOverview(s){
@@ -791,21 +792,94 @@ function vcpTable(rows, title){
       <td style="text-align:left;max-width:280px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
         ${(x.why||[]).map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table></div>`;
 }
+function srcBadge(v){
+  if(!v||!v.source) return '';
+  const u=v.source_url||'';
+  const label=String(v.source).replace('github:','');
+  return u?` · 数据源 <a href="${u}" target="_blank" rel="noopener"
+    style="color:var(--blue);text-decoration:none">${esc(label)} ↗</a>`
+        :` · 数据源 ${esc(label)}`;
+}
 function viewVcp(s){
   const v=s.vcp;
   if(!v){
     return `<div class="card"><h3>VCP 信号融合</h3>
-      <div class="notice">本快照未加载 VCP 扫描。本地或 VM 运行 <code>python3 vm/collect.py --vcp /path/to/VCP/数据</code>（目录会自动取最新的 vcp_US_*.txt）即可把每日 VCP 买入榜按本面板 5 因子系统打分并融合，看到「买入前10榜 / 额外买入前10榜」的系统分与综合判定。</div></div>`;
+      <div class="notice">本次快照没有取到 VCP 扫描。正常情况下每次刷新会自动从
+      <a href="https://github.com/peteryang2333/vcp-screener" target="_blank" rel="noopener">peteryang2333/vcp-screener</a>
+      的 <code>数据/最新_US.txt</code> 跨仓库读取当日结果；上游当天还没跑完、或临时不可达时会短暂看到这条提示。</div></div>`;
   }
-  const buy=(v.buy_top10||[]), ext=(v.extra_top10||[]);
+  const mode=window.VCP_TAB||'buy';
+  const rows = mode==='buy' ? (v.buy_top10||[])
+             : mode==='extra' ? (v.extra_top10||[])
+             : (v.candidates||[]);
+  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="VCP_TAB='${k}';renderBody()">${l}</button>`;
+  const title = mode==='buy' ? '买入前10榜 · 形态最强'
+              : mode==='extra' ? '额外买入前10榜 · 次优梯队'
+              : `全部候选 · ${v.n} 只（按 VCP 分 → 距突破% 排序）`;
   return `
-  <div class="card"><h3>VCP 信号融合 · 每日扫描 × 5 因子系统</h3>
-    <div class="sub">扫描日期 ${esc(v.date||'')} · ${esc(v.market||'')} · 池 ${esc(v.pool||'')} · 共 ${v.n} 只 VCP 形态标的　——　VCP 分(形态强度) 与 系统分(技术+活跃+资金+机构+论点) 双维度，先打分、再选买哪个。</div>
-    <div class="hint" style="margin-top:6px">买入前10榜 = VCP 形态最强梯队；额外买入前10榜 = 次优梯队。综合 = 0.4×VCP归一 + 0.6×系统分。绿=强(形态+系统双高) / 金=警惕(形态好但系统分低) / 蓝=中(次优) / 红=弱。仅供研究，非投资建议。</div>
-    ${buy.length?vcpTable(buy,'买入前10榜 · 形态最强'):'<div class="notice">无买入前10数据</div>'}
-    ${ext.length?vcpTable(ext,'额外买入前10榜 · 次优梯队'):''}
-    <div class="hint" style="margin-top:10px">${esc(v.method||'')}</div>
-  </div>`;
+  <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <b>VCP 信号融合 · 每日扫描 × 5 因子系统</b>
+    <span>${btn('buy','买入前10')}${btn('extra','额外买入前10')}${btn('all','全部候选')}</span></div>
+    <div class="sub">扫描日期 ${esc(v.date||'')} · ${esc(v.market||'')} · 共 ${v.n} 只形态命中，其中 ${v.scored_n||0} 只已算系统分${srcBadge(v)}</div>
+    <div class="hint" style="margin-top:6px">买入前10榜 = VCP 形态最强梯队；额外买入前10榜 = 次优梯队。综合 = 0.4×VCP归一 + 0.6×系统分。绿=强(形态+系统双高) / 金=警惕(形态好但系统分低) / 蓝=中(次优) / 红=弱。系统分只对最靠近突破的前 70 只计算，其余显示「—」。仅供研究，非投资建议。</div>
+  </div>
+  ${rows.length?vcpTable(rows,title):'<div class="card" style="margin-top:14px"><div class="notice">该榜单当前无数据</div></div>'}
+  <div class="card" style="margin-top:14px"><div class="hint">${esc(v.method||'')}</div></div>`;
+}
+
+/* ---- 08 全市场扫描：stock-screener 每日买卖信号 × 5 因子系统 ---- */
+function scanTable(rows, title, kind){
+  const isSell = kind==='sell';
+  return `<div class="card" style="margin-top:14px"><h3>${title}</h3>
+    <table><thead><tr><th>标的</th><th>扫描分</th><th>阶段</th><th>买点质量</th>
+      <th>${isSell?'跌破位':'突破价'}</th><th>止损</th><th>R:R</th><th>RS斜率</th><th>量比</th>
+      <th>系统分</th><th>综合</th><th>判定</th><th>扫描器给的理由</th></tr></thead>
+    <tbody>${rows.map(x=>`<tr>
+      <td class="sym">${esc(x.sym)}</td>
+      <td>${x.scan_norm!=null?scoreChip(x.scan_norm):'—'}<span style="color:var(--dim2);font-size:11px">${x.scan_score!=null?' '+x.scan_score:''}</span></td>
+      <td style="white-space:nowrap">${esc(x.phase||'—')}</td>
+      <td style="white-space:nowrap;color:${x.entry_quality==='Good'?'var(--up)':(x.entry_quality==='Extended'?'var(--gold)':'var(--dim2)')}">${esc(x.entry_quality||'—')}</td>
+      <td>${n2(isSell?x.breakdown:x.breakout)}</td>
+      <td>${n2(x.stop_loss)}</td>
+      <td class="${x.rr>=2?'up':(x.rr!=null&&x.rr<1.5?'down':'flat')}">${x.rr!=null?Number(x.rr).toFixed(1)+':1':'—'}</td>
+      <td class="${x.rs_slope>0?'up':'down'}">${x.rs_slope!=null?Number(x.rs_slope).toFixed(2):'—'}</td>
+      <td>${x.vol_ratio!=null?Number(x.vol_ratio).toFixed(1)+'x':'—'}</td>
+      <td>${x.system_score!=null?scoreChip(x.system_score):'<span class="flat">—</span>'}</td>
+      <td>${x.combined!=null?scoreChip(x.combined):'<span class="flat">—</span>'}</td>
+      <td style="text-align:left;color:${verdictColor(x.verdict)};white-space:nowrap;font-weight:600">${esc(x.verdict)}</td>
+      <td style="text-align:left;max-width:300px"><span style="display:inline-flex;flex-wrap:wrap;gap:4px">
+        ${(x.reasons||[]).map(w=>`<span class="evchip" style="padding:2px 8px;margin:0">${esc(w)}</span>`).join('')||'<span class="flat">—</span>'}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+function viewScan(s){
+  const v=s.screener;
+  if(!v){
+    return `<div class="card"><h3>全市场扫描融合</h3>
+      <div class="notice">本次快照没有取到全市场扫描结果。每次刷新会自动从
+      <a href="https://github.com/peteryang2333/stock-screener" target="_blank" rel="noopener">peteryang2333/stock-screener</a>
+      的 <code>data/daily_scans/latest_signals.json</code> 跨仓库读取；该扫描每个交易日 UTC 12:00（北京 20:00）跑一次约 3800 只美股，
+      首个交易日跑完后这里就会自动出数。</div></div>`;
+  }
+  const mode=window.SCAN_TAB||'buy';
+  const rows = mode==='buy' ? (v.buy_top10||[])
+             : mode==='extra' ? (v.extra_top10||[])
+             : mode==='sell' ? (v.sells||[])
+             : (v.buys||[]);
+  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="SCAN_TAB='${k}';renderBody()">${l}</button>`;
+  const title = mode==='buy' ? '买入前10榜 · 综合分最高'
+              : mode==='extra' ? '额外买入前10榜'
+              : mode==='sell' ? '卖出信号榜'
+              : `全部买入信号 · ${(v.buys||[]).length} 只`;
+  return `
+  <div class="card"><div class="sub" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <b>全市场扫描融合 · ≈3800 只美股 × 5 因子系统</b>
+    <span>${btn('buy','买入前10')}${btn('extra','额外买入前10')}${btn('all','全部买入')}${btn('sell','卖出信号')}</span></div>
+    <div class="sub">扫描日 ${esc(v.date||'')} · 宇宙 ${v.universe!=null?Number(v.universe).toLocaleString():'—'} 只 / 有效分析 ${v.analyzed!=null?Number(v.analyzed).toLocaleString():'—'} 只 ·
+      买入信号 ${v.buy_n!=null?v.buy_n:'—'} / 卖出信号 ${v.sell_n!=null?v.sell_n:'—'}${srcBadge(v)}</div>
+    <div class="hint" style="margin-top:6px">扫描器自带的分数（买入 /125、卖出 /110）已归一到百分制；<b>综合 = 0.4×扫描分 + 0.6×本面板系统分</b>。
+      两套引擎彼此独立——扫描器看形态/量价/风险回报，本面板看趋势+活跃+资金流+机构共识+你的论点。<b>双高才是强信号；扫描分高但系统分低要警惕。</b>仅供研究，非投资建议。</div>
+  </div>
+  ${rows.length?scanTable(rows,title,mode==='sell'?'sell':'buy'):'<div class="card" style="margin-top:14px"><div class="notice">该榜单当前无数据</div></div>'}
+  <div class="card" style="margin-top:14px"><div class="hint">${esc(v.method||'')}</div></div>`;
 }
 
 /* ============================ sizer ============================ */
@@ -831,7 +905,7 @@ function bindSizer(){
 /* ============================ render ============================ */
 const VIEWS={overview:viewOverview,macro:viewMacro,direction:viewDirection,
              rotation:viewRotation,movers:viewMovers,flow:viewFlow,rank:viewRank,
-             vcp:viewVcp,kova:viewKova,discipline:viewDiscipline,proof:viewProof};
+             vcp:viewVcp,scan:viewScan,kova:viewKova,discipline:viewDiscipline,proof:viewProof};
 
 function renderNav(){
   $('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===TAB?'on':''}">${l}</button>`).join('');

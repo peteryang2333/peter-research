@@ -25,10 +25,11 @@ It runs in two flavours from the same code:
 | 04 最活跃 | Movers | Most-active US stocks by dollar volume + per-stock accumulation / distribution (net-flow index) | derived from OHLCV |
 | 05 资金·机构 | Flow & Institutional | Analyst consensus (buy/hold/sell, target upside) + money-flow accumulation list | nasdaq consensus |
 | 06 复合排名 | Composite Ranker | **5-factor fusion** = 0.35·technical + 0.10·activity + 0.20·flow + 0.20·institutional + 0.15·thesis, with a per-stock "why highlighted" list | all of the above |
-| 07 VCP融合 | VCP Fusion | Daily volatility-contraction scan folded into the same 5-factor system: **买入前10榜 + 额外买入前10榜** with system score, 综合 verdict, breakout trigger & stops | local VCP scan (`--vcp`) |
-| 08 打分 | Score | Transparent screener on your thematic watchlist (trend, momentum, relative strength, distance from high, volume) | derived |
-| 09 纪律 | Discipline | Percent-risk position sizer; risk budget scaled by the live posture (private: real holdings/NLV) | local state |
-| 10 验证 | Proof | Current holding, NLV, drawdown, equity curve, rotation log — **private only** | local strategy state |
+| 07 VCP融合 | VCP Fusion | Daily volatility-contraction scan folded into the same 5-factor system: **买入前10榜 + 额外买入前10榜 + 全部候选** with system score, 综合 verdict, breakout trigger & stops | [`peteryang2333/vcp-screener`](https://github.com/peteryang2333/vcp-screener) (cross-repo) |
+| 08 全市场扫描 | Full-Market Scan | ~3 800 US stocks scanned daily; every buy/sell signal re-scored by the same 5-factor system, with phase, entry quality, stop, R:R | [`peteryang2333/stock-screener`](https://github.com/peteryang2333/stock-screener) (cross-repo) |
+| 09 打分 | Score | Transparent screener on your thematic watchlist (trend, momentum, relative strength, distance from high, volume) | derived |
+| 10 纪律 | Discipline | Percent-risk position sizer; risk budget scaled by the live posture (private: real holdings/NLV) | local state |
+| 11 验证 | Proof | Current holding, NLV, drawdown, equity curve, rotation log — **private only** | local strategy state |
 
 **Why five signals, not just your thesis:** a single-thesis ranker is fragile. The composite
 ranker blends the technical screener, trading activity, money flow, institutional consensus and
@@ -40,9 +41,26 @@ Every score is a mechanical, reproducible formula. No black box, no proprietary 
 ## How it runs
 
 ```
-public :  Actions cron -> collect.py --public -> docs/snapshot.json -> Pages
-private:  root cron    -> collect.py           -> /opt/peter-research/web/snapshot.json -> Caddy
+public :  Actions cron -> collect.py --public --remote -> docs/snapshot.json -> Pages
+private:  root cron    -> collect.py                    -> /opt/peter-research/web/snapshot.json -> Caddy
 ```
+
+### Cross-repo signal pull (no VM required)
+
+The two screeners live in their own repos and publish their results there on their own
+schedule. Every snapshot run reads those files straight across the repo boundary — public
+raw URL first, Contents API as fallback — so the dashboard is always showing today's scan
+without anything running on a server of mine.
+
+| Upstream repo | File read | Upstream schedule (UTC) |
+|---|---|---|
+| `peteryang2333/vcp-screener` | `数据/最新_US.txt` | 21:30 Mon–Fri (after the US close) |
+| `peteryang2333/stock-screener` | `data/daily_scans/latest_signals.json` | 12:00 Mon–Fri |
+
+A missing or stale upstream file never breaks the build: `gh_text()` returns `None`, the tab
+renders an explanatory notice, and the rest of the snapshot publishes as usual. Only the
+top `--score-cap` (default 70) candidates per source get a 2-year history fetch, which keeps
+the run inside CI limits even when the VCP scan hits 120 names.
 
 - `vm/collect.py` fetches ~190 symbols (155 liquid cross-sector stocks + 26 ETFs + benchmarks
   and sectors) in parallel (~4 min, stdlib + `requests` only) and writes one flat `snapshot.json`.

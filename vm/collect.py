@@ -1090,6 +1090,84 @@ def build_composite(hist_cache, spy_c, quotes, liquid_stocks, flow_rows, inst_ro
 # VCP fusion — fold the daily Volatility-Contraction-Pattern scan into the
 # same 5-factor system so "买入前10榜 / 额外买入前10榜" get a system score + verdict.
 # ----------------------------------------------------------------------------
+GH_OWNER = "peteryang2333"
+GH_RAW = "https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
+GH_API = "https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={ref}"
+
+
+def gh_text(repo, path, ref="main", timeout=25, tries=3):
+    """Read a text file out of *another* public repo of the same GitHub owner.
+
+    This is what makes the daily VCP / full-market-scan data show up here
+    without any VM: the screeners commit their output to their own repos,
+    and every snapshot run pulls the latest copy across repo boundaries.
+    raw.githubusercontent is tried first (CDN, unauthenticated, no API quota);
+    the Contents API with `Accept: raw` is the fallback for networks that
+    block the raw host. Returns None instead of raising — a missing upstream
+    file must never break the whole snapshot."""
+    from urllib.parse import quote
+    q = quote(path)
+    urls = [
+        (GH_RAW.format(owner=GH_OWNER, repo=repo, ref=ref, path=q), "text/plain"),
+        (GH_API.format(owner=GH_OWNER, repo=repo, ref=ref, path=q),
+         "application/vnd.github.raw"),
+    ]
+    for attempt in range(tries):
+        for url, accept in urls:
+            try:
+                r = SESSION.get(url, timeout=timeout, headers={"Accept": accept})
+                if r.status_code == 200 and r.text:
+                    r.encoding = "utf-8"
+                    return r.text
+                if r.status_code == 404:
+                    return None
+            except Exception:
+                pass
+        time.sleep(1.0 + attempt)
+    return None
+
+
+def parse_vcp_md(txt):
+    """Parse the screener's published markdown table (数据/最新_US.txt).
+
+    Columns: VCP分|代码|当前价格|RS评级|收缩%|5日振幅%|缩量比例%|突破挂单价|
+             距突破%|距52周高%|放量突破|10EMA|21EMA|吊灯止损|ATR止损"""
+    date = None
+    m = re.search(r"扫描日:\s*([0-9\-]+)", txt)
+    if m:
+        date = m.group(1)
+    pm = re.search(r"数据来源:\s*([^\n]+)", txt)
+    pool = pm.group(1).strip() if pm else None
+
+    def num(s):
+        s = (s or "").strip()
+        try:
+            return float(s)
+        except Exception:
+            return None
+
+    cands = []
+    for line in txt.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 15 or not re.fullmatch(r"[1-3]", cells[0]):
+            continue
+        ratios = (cells[4].split("/") + ["", "", ""])[:3]
+        cands.append({
+            "vcp_score": int(cells[0]), "sym": cells[1],
+            "price": num(cells[2]), "rs": int(num(cells[3]) or 0),
+            "contraction": num(ratios[0]), "amp5": num(cells[5]),
+            "shrink": num(cells[6]), "trigger": num(cells[7]),
+            "dist_breakout": num(cells[8]), "dist52": num(cells[9]),
+            "vol_breakout": bool(cells[10].strip()),
+            "ema10": num(cells[11]), "ema21": num(cells[12]),
+            "stop_chandelier": num(cells[13]), "stop_hard": num(cells[14]),
+        })
+    return {"date": date, "market": "美股", "pool": pool,
+            "n": len(cands), "candidates": cands}
+
+
 def parse_vcp_txt(path):
     """Parse a VCP screener TXT (e.g. 数据/vcp_US_20260801.txt).
 
@@ -1098,6 +1176,8 @@ def parse_vcp_txt(path):
     The two unlabeled columns sit between the ratio group and the breakout
     block; we skip them and read the trailing 7 fields by fixed position."""
     txt = open(path, encoding="utf-8", errors="ignore").read()
+    if "| VCP分 |" in txt or re.search(r"^\|\s*[1-3]\s*\|", txt, re.M):
+        return parse_vcp_md(txt)
     m = re.search(r"VCP 扫描器 v(\d+)\s*\|\s*([0-9\-]+)\s+([0-9:]+)", txt)
     date = m.group(2) if m else None
     mm = re.search(r"【(🇺🇸|🇯🇵|🇰🇷)\s*([^】]+)】扫描开始", txt)
@@ -1129,6 +1209,18 @@ def parse_vcp_txt(path):
             "n": len(cands), "candidates": cands}
 
 
+def _verdict(vcp_score, sys_score):
+    if sys_score is None:
+        return "系统分缺失(历史不足)"
+    if vcp_score >= 3 and sys_score >= 70:
+        return "强 · 形态+系统双高"
+    if vcp_score >= 3 and sys_score < 55:
+        return "警惕 · 形态好但系统分低"
+    if vcp_score == 2:
+        return "中 · 次优梯队"
+    return "弱 · 仅观察"
+
+
 def build_vcp(vcp, hist_cache, spy_c, flow_rows, inst_rows):
     fmap = {r["sym"]: r for r in flow_rows}
     imap = {r["sym"]: r for r in inst_rows}
@@ -1138,32 +1230,98 @@ def build_vcp(vcp, hist_cache, spy_c, flow_rows, inst_rows):
         h = hist_cache.get(sym)
         r = _composite_row(sym, h, spy_c, fmap, imap) if (h and len(h) >= 210) else None
         sys_score = r["score"] if r else None
-        contrib = r["contrib"] if r else None
-        why = r["why"] if r else []
         vs = c.get("vcp_score", 0)
-        if sys_score is None:
-            verdict = "系统分缺失(历史不足)"
-        elif vs >= 3 and sys_score >= 70:
-            verdict = "强 · 形态+系统双高"
-        elif vs >= 3 and sys_score < 55:
-            verdict = "警惕 · 形态好但系统分低"
-        elif vs == 2:
-            verdict = "中 · 次优梯队"
-        else:
-            verdict = "弱 · 仅观察"
-        combined = round((vs / 3) * 100 * 0.4 + (sys_score or 0) * 0.6) if sys_score is not None else None
-        out.append({**c, "system_score": sys_score, "contrib": contrib,
-                    "why": why, "verdict": verdict, "combined": combined})
+        combined = (round((vs / 3) * 100 * 0.4 + sys_score * 0.6)
+                    if sys_score is not None else None)
+        out.append({**c, "system_score": sys_score,
+                    "contrib": r["contrib"] if r else None,
+                    "why": r["why"] if r else [],
+                    "verdict": _verdict(vs, sys_score), "combined": combined})
+    # Closest-to-breakout first inside each VCP tier — that is the order the
+    # screener itself publishes, and it is the order that matters for entries.
     out.sort(key=lambda x: (-(x.get("vcp_score") or 0),
-                            x.get("dist_breakout") or 999,
+                            x.get("dist_breakout") if x.get("dist_breakout") is not None else 999,
                             -(x.get("rs") or 0)))
+    scored = [r for r in out if r["system_score"] is not None]
     return {
         "date": vcp.get("date"), "market": vcp.get("market"), "pool": vcp.get("pool"),
-        "n": len(out),
+        "n": len(out), "scored_n": len(scored),
+        "source": vcp.get("source"), "source_url": vcp.get("source_url"),
         "buy_top10": out[:10], "extra_top10": out[10:20], "candidates": out,
         "method": ("VCP 信号(分/RS/突破挂单/止损) 与 本面板 5 因子系统分"
                    "(技术35+活跃10+资金20+机构20+论点15) 融合；"
                    "综合 = 0.4×VCP归一 + 0.6×系统分。绿=强/红=弱，仅供研究，非投资建议。"),
+    }
+
+
+# ----------------------------------------------------------------------------
+# Full-market scanner fusion — peteryang2333/stock-screener publishes
+# data/daily_scans/latest_signals.json every weekday; we score its buy/sell
+# lists with the same 5-factor system so both engines are directly comparable.
+# ----------------------------------------------------------------------------
+def build_screener(sig, hist_cache, spy_c, flow_rows, inst_rows):
+    fmap = {r["sym"]: r for r in flow_rows}
+    imap = {r["sym"]: r for r in inst_rows}
+
+    def rows_of(items):
+        out = []
+        for s in items or []:
+            sym = s.get("ticker") or s.get("sym")
+            if not sym:
+                continue
+            h = hist_cache.get(sym)
+            r = (_composite_row(sym, h, spy_c, fmap, imap)
+                 if (h and len(h) >= 210) else None)
+            sys_score = r["score"] if r else None
+            raw = s.get("score")
+            # scanner buys are /125, sells /110 → normalise to 0-100
+            base = s.get("score_max") or 125
+            norm = round(min(100.0, (raw or 0) / base * 100)) if raw is not None else None
+            combined = (round(0.4 * norm + 0.6 * sys_score)
+                        if (norm is not None and sys_score is not None) else None)
+            if sys_score is None:
+                verdict = "系统分缺失(历史不足)"
+            elif norm is not None and norm >= 60 and sys_score >= 70:
+                verdict = "强 · 扫描+系统双高"
+            elif norm is not None and norm >= 60 and sys_score < 55:
+                verdict = "警惕 · 扫描高但系统分低"
+            elif sys_score >= 65:
+                verdict = "中 · 系统分撑住"
+            else:
+                verdict = "弱 · 仅观察"
+            out.append({
+                "sym": sym, "scan_score": raw, "scan_norm": norm,
+                "phase": s.get("phase"), "entry_quality": s.get("entry_quality"),
+                "price": s.get("price") or (r["price"] if r else None),
+                "stop_loss": s.get("stop_loss"), "target": s.get("target"),
+                "rr": s.get("risk_reward_ratio"),
+                "breakout": s.get("breakout_price"),
+                "breakdown": s.get("breakdown_level"),
+                "severity": s.get("severity"),
+                "rs_slope": s.get("rs_slope"), "vol_ratio": s.get("volume_ratio"),
+                "vcp_quality": s.get("vcp_quality"),
+                "reasons": (s.get("reasons") or [])[:4],
+                "system_score": sys_score, "contrib": r["contrib"] if r else None,
+                "why": r["why"] if r else [],
+                "combined": combined, "verdict": verdict,
+            })
+        out.sort(key=lambda x: -(x["combined"] if x["combined"] is not None
+                                 else (x["scan_norm"] or 0)))
+        return out
+
+    buys = rows_of(sig.get("buys"))
+    sells = rows_of(sig.get("sells"))
+    return {
+        "date": sig.get("scan_date"), "generated_at": sig.get("generated_at"),
+        "universe": sig.get("universe"), "analyzed": sig.get("analyzed"),
+        "buy_n": sig.get("buy_n"), "sell_n": sig.get("sell_n"),
+        "spy_trend": sig.get("spy_trend"), "breadth": sig.get("breadth"),
+        "source": sig.get("source"), "source_url": sig.get("source_url"),
+        "buy_top10": buys[:10], "extra_top10": buys[10:20],
+        "buys": buys, "sells": sells[:10],
+        "method": ("全市场扫描器(≈3800只) 的买卖信号 与 本面板 5 因子系统分融合；"
+                   "扫描分归一到百分制后 综合 = 0.4×扫描 + 0.6×系统。"
+                   "两套引擎独立打分，双高才算强信号。非投资建议。"),
     }
 
 
@@ -1465,15 +1623,24 @@ def main():
                     help="strip personal broker data (real holdings, NLV, equity) "
                          "so the snapshot is safe to publish on a public site")
     ap.add_argument("--vcp", default=None,
-                    help="path to a VCP scan TXT or its directory (latest "
-                         "vcp_US_*.txt is auto-picked). Folds the daily VCP "
-                         "buy-list into the 5-factor system. Private-only signal.")
+                    help="path to a LOCAL VCP scan TXT or its directory (latest "
+                         "vcp_US_*.txt is auto-picked). Overrides --remote for VCP.")
+    ap.add_argument("--remote", action="store_true", default=True,
+                    help="pull the daily VCP scan and full-market scan straight "
+                         "out of the sibling GitHub repos (vcp-screener / "
+                         "stock-screener). On by default; this is how the public "
+                         "site stays fresh with no VM.")
+    ap.add_argument("--no-remote", dest="remote", action="store_false",
+                    help="disable the cross-repo pull")
+    ap.add_argument("--score-cap", type=int, default=70,
+                    help="max upstream candidates to fetch history for, per "
+                         "source (keeps CI runtime and rate limits sane)")
     args = ap.parse_args()
 
-    # Optional VCP scan fusion: parse the daily volatility-contraction scan so
-    # its candidates get scored by the same 5-factor system. No --vcp => skip.
+    # ---- upstream sources -------------------------------------------------
+    # VCP fusion: prefer a local file when explicitly given, otherwise read the
+    # published table straight out of peteryang2333/vcp-screener.
     vcp = None
-    vcp_syms = []
     if args.vcp:
         vp = args.vcp
         if os.path.isdir(vp):
@@ -1482,15 +1649,52 @@ def main():
         if vp and os.path.exists(vp):
             try:
                 vcp = parse_vcp_txt(vp)
-                vcp_syms = [c["sym"] for c in vcp["candidates"]]
+                vcp["source"] = "local:" + os.path.basename(vp)
             except Exception as e:
                 print("WARN parse_vcp_txt failed:", e, file=sys.stderr)
-                vcp = None
+    if vcp is None and args.remote:
+        try:
+            txt = gh_text("vcp-screener", "数据/最新_US.txt")
+            if txt:
+                vcp = parse_vcp_md(txt)
+                vcp["source"] = "github:peteryang2333/vcp-screener"
+                vcp["source_url"] = ("https://github.com/peteryang2333/"
+                                     "vcp-screener/blob/main/数据/最新_US.txt")
+                print(f"VCP remote: {vcp['n']} candidates, scan {vcp['date']}",
+                      file=sys.stderr)
+        except Exception as e:
+            print("WARN remote VCP fetch failed:", e, file=sys.stderr)
+
+    # Full-market scanner signals from peteryang2333/stock-screener.
+    screener = None
+    if args.remote:
+        try:
+            j = gh_text("stock-screener", "data/daily_scans/latest_signals.json")
+            if j:
+                screener = json.loads(j)
+                screener["source"] = "github:peteryang2333/stock-screener"
+                screener["source_url"] = ("https://github.com/peteryang2333/"
+                                          "stock-screener/blob/main/data/"
+                                          "daily_scans/latest_signals.json")
+                print(f"Screener remote: {len(screener.get('buys') or [])} buys, "
+                      f"scan {screener.get('scan_date')}", file=sys.stderr)
+        except Exception as e:
+            print("WARN remote screener fetch failed:", e, file=sys.stderr)
+
+    # Only the top slice of each upstream list gets a 2Y history fetch, so a
+    # 120-name VCP hit list can't blow up the run time or trip rate limits.
+    cap = max(0, args.score_cap)
+    vcp_syms = [c["sym"] for c in (vcp or {}).get("candidates", [])][:cap]
+    scan_syms = [s.get("ticker") for s in (screener or {}).get("buys", [])[:cap]
+                 if s.get("ticker")]
+    scan_syms += [s.get("ticker") for s in (screener or {}).get("sells", [])[:20]
+                  if s.get("ticker")]
+    ext_syms = list(dict.fromkeys(vcp_syms + scan_syms))
 
     t0 = time.time()
     universe = list(dict.fromkeys(
         BENCH + list(SECTORS) + CREDIT + VOLPROXY + LEVERAGED + WATCHLIST
-        + LIQUID_STOCKS + LIQUID_ETFS + vcp_syms))
+        + LIQUID_STOCKS + LIQUID_ETFS + ext_syms))
 
     # Parallel fetch: 6 workers keeps wall-time ~20s instead of ~115s while
     # staying polite to the free endpoints and light on a 1GB box.
@@ -1512,7 +1716,7 @@ def main():
     quotes = {}
     quote_syms = list(dict.fromkeys(
         BENCH + ["HYG", "TLT", "VIXY"] + LEVERAGED + WATCHLIST
-        + LIQUID_STOCKS + LIQUID_ETFS + vcp_syms))
+        + LIQUID_STOCKS + LIQUID_ETFS + ext_syms))
     with ThreadPoolExecutor(max_workers=6) as ex:
         futs = {ex.submit(get_quote, s): s for s in quote_syms}
         for fut in as_completed(futs):
@@ -1525,7 +1729,7 @@ def main():
     # Warm analyst-consensus cache for the liquid universe (parallel).
     with ThreadPoolExecutor(max_workers=6) as ex:
         list(as_completed(ex.submit(get_analyst, s)
-                          for s in LIQUID_STOCKS + vcp_syms))
+                          for s in LIQUID_STOCKS + ext_syms))
 
     spy_c = closes_of(hist_cache.get("SPY"))
 
@@ -1544,7 +1748,7 @@ def main():
         except Exception:
             journal = None
 
-    EXTRA = list(dict.fromkeys(LIQUID_STOCKS + vcp_syms))
+    EXTRA = list(dict.fromkeys(LIQUID_STOCKS + ext_syms))
     flow = build_flow(hist_cache, quotes, EXTRA)
     institutional = build_institutional(hist_cache, quotes, EXTRA)
     composite = build_composite(hist_cache, spy_c, quotes, EXTRA,
@@ -1563,6 +1767,8 @@ def main():
         "composite": composite,
         "vcp": build_vcp(vcp, hist_cache, spy_c, flow["rows"], institutional["rows"])
                 if vcp else None,
+        "screener": build_screener(screener, hist_cache, spy_c, flow["rows"],
+                                   institutional["rows"]) if screener else None,
         "kova": build_kova(hist_cache, spy_c),
         "universe": build_universe_doc(),
         "leveraged": build_leveraged(hist_cache, spy_c),
@@ -1575,9 +1781,14 @@ def main():
             "elapsed_s": round(time.time() - t0, 1),
             "vcp": vcp["date"] if vcp else None,
             "vcp_n": len(vcp_syms),
+            "vcp_src": (vcp or {}).get("source"),
+            "scan": (screener or {}).get("scan_date"),
+            "scan_n": len(scan_syms),
+            "scan_src": (screener or {}).get("source"),
             "sources": ["stockanalysis.com", "api.nasdaq.com (quote+analyst)",
                         "api.worldbank.org", "local strategy state",
-                        "local VCP scan (--vcp)"],
+                        "github:peteryang2333/vcp-screener (每日 VCP 扫描)",
+                        "github:peteryang2333/stock-screener (每日全市场扫描)"],
             "note": "No Yahoo/yfinance (rate-limited for this account).",
         },
     }

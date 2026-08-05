@@ -120,7 +120,7 @@ def main():
                     oci.core.models.AddSecurityRuleDetails(
                         direction="INGRESS", protocol="6", source="0.0.0.0/0",
                         source_type="CIDR_BLOCK",
-                        description=f"peter-research dashboard {args.port}",
+                        description=f"peter-review dashboard {args.port}",
                         tcp_options=oci.core.models.TcpOptions(
                             destination_port_range=oci.core.models.PortRange(
                                 min=args.port, max=args.port)))]))
@@ -141,7 +141,7 @@ def main():
     new_rule = oci.core.models.IngressSecurityRule(
         protocol="6", source="0.0.0.0/0", source_type="CIDR_BLOCK",
         is_stateless=False,
-        description=f"peter-research dashboard {args.port}",
+        description=f"peter-review dashboard {args.port}",
         tcp_options=oci.core.models.TcpOptions(
             destination_port_range=oci.core.models.PortRange(
                 min=args.port, max=args.port)))

@@ -10,23 +10,25 @@ set -euo pipefail
 HOST=${HOST:-152.70.194.225}
 USER_=${USER_:-ubuntu}
 KEY=${KEY:-$HOME/.ssh/id_ed25519}
-BASE=/opt/peter-research
+BASE=/opt/peter-review
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 SSHOPT=(-i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
 
 echo "==> shipping code to $USER_@$HOST:$BASE"
 scp "${SSHOPT[@]}" -q "$ROOT/vm/collect.py" "$ROOT/vm/refresh.sh" \
-    "$ROOT/vm/refreshd.py" "$ROOT/vm/peter-refreshd.service" "$USER_@$HOST:$BASE/"
+    "$ROOT/vm/refreshd.py" "$ROOT/vm/peter-refreshd.service" \
+    "$ROOT/vm/liquid_universe.json" \
+    "$USER_@$HOST:$BASE/"
 scp "${SSHOPT[@]}" -q "$ROOT/docs/index.html" "$USER_@$HOST:$BASE/web/"
 
 echo "==> refreshing private snapshot + reloading Caddy"
 ssh "${SSHOPT[@]}" "$USER_@$HOST" 'bash -s' <<'REMOTE'
 set -e
-chmod +x /opt/peter-research/refresh.sh
+chmod +x /opt/peter-review/refresh.sh
 
 # --- on-demand refresh trigger (systemd) -----------------------------------
-sudo install -m 644 /opt/peter-research/peter-refreshd.service \
+sudo install -m 644 /opt/peter-review/peter-refreshd.service \
      /etc/systemd/system/peter-refreshd.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now peter-refreshd >/dev/null 2>&1 || true
@@ -34,7 +36,7 @@ sudo systemctl restart peter-refreshd
 
 # --- Caddy: route /api/* to the trigger (idempotent, preserves auth hash) ---
 sudo /usr/bin/python3 - <<'PATCH'
-p = "/opt/peter-research/Caddyfile"
+p = "/opt/peter-review/Caddyfile"
 s = orig = open(p).read()
 UPSTREAM = "reverse_proxy unix//data/refreshd.sock"
 
@@ -66,13 +68,13 @@ else:
     print("caddyfile: already up to date")
 PATCH
 
-sudo /opt/peter-research/refresh.sh
-docker exec peter-research caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
-  docker restart peter-research >/dev/null
+sudo /opt/peter-review/refresh.sh
+docker exec peter-review caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
+  docker restart peter-review >/dev/null
 echo "--- status ---"
-docker ps --filter name=peter-research --format "{{.Names}} {{.Status}}"
+docker ps --filter name=peter-review --format "{{.Names}} {{.Status}}"
 systemctl is-active peter-refreshd | sed 's/^/peter-refreshd: /'
-sudo tail -n 3 /opt/peter-research/refresh.log
+sudo tail -n 3 /opt/peter-review/refresh.log
 REMOTE
 
 echo "==> done: https://152-70-194-225.sslip.io:8443/"

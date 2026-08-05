@@ -7,12 +7,19 @@ Wants=network-online.target
 Type=simple
 # Root is required: refresh.sh reads the bridge's docker volume.
 User=root
-ExecStart=/usr/bin/python3 /opt/peter-research/refreshd.py
+ExecStart=/usr/bin/python3 /opt/peter-review/refreshd.py
 Restart=always
 RestartSec=5
-# This box has 1 GB total - keep the daemon (and the collector it spawns) boxed in.
-MemoryMax=320M
+# This box has 1 GB total - keep the daemon (and the collector it spawns) boxed
+# in, but 320M was too tight: the full collector peaks above it and the cgroup
+# OOM-killed every button-triggered refresh (refresh.log: "<pid> Killed"), which
+# looked exactly like "the dashboard has no data". Measured baseline is 307M used
+# / 491M available, so 700M lands in RAM with only a sliver of swap.
+MemoryMax=700M
 Nice=5
+# A full collect takes ~26 min; the old 300s default made the refresh button
+# report a bogus timeout while the run was still healthy.
+Environment=REFRESHD_TIMEOUT=1800
 
 [Install]
 WantedBy=multi-user.target

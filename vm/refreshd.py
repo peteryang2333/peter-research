@@ -32,7 +32,7 @@ SOCK = os.environ.get(
     "/var/lib/docker/volumes/peter_review_data/_data/refreshd.sock")
 BIND = os.environ.get("REFRESHD_BIND", "127.0.0.1")   # only used when PORT set
 PORT = int(os.environ.get("REFRESHD_PORT", "0"))      # 0 = unix socket mode
-SCRIPT = os.environ.get("REFRESHD_SCRIPT", "/opt/peter-research/refresh.sh")
+SCRIPT = os.environ.get("REFRESHD_SCRIPT", "/opt/peter-review/refresh.sh")
 MIN_INTERVAL = int(os.environ.get("REFRESHD_MIN_INTERVAL", "45"))
 RUN_TIMEOUT = int(os.environ.get("REFRESHD_TIMEOUT", "300"))
 

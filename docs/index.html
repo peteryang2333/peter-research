@@ -154,7 +154,9 @@ function subBar(name,val){ const c=scoreColor(val);
 
 /* ============================ state ============================ */
 let SNAP=null, PRIV=null, TAB='overview', MACRO_METRIC='infl';
-let MOVER_TAB='active', FLOW_TAB='inst', VCP_TAB='buy', SCAN_TAB='buy';
+/* 子标签状态必须挂在 window 上：顶层 `let` 声明的绑定不会成为 window 的属性，
+   而各视图读取的是 window.XXX_TAB —— 那样会永远读到 undefined，按钮点了不切换。 */
+window.MOVER_TAB='active'; window.FLOW_TAB='inst'; window.VCP_TAB='buy'; window.SCAN_TAB='buy';
 const TABS=[['overview','总览'],['macro','01 宏观'],['direction','02 方向'],['rotation','03 轮动'],
             ['movers','04 最活跃'],['flow','05 资金·机构'],['rank','06 复合排名'],
             ['vcp','07 VCP融合'],['scan','08 全市场扫描'],['kova','09 打分'],
@@ -674,9 +676,9 @@ function viewMovers(s){
   const f=s.flow||{}, active=(f.most_active||[]), acc=(f.accumulation||[]);
   const cm=compLookup(s);
   const mode=window.MOVER_TAB||'active';
-  const b1=`<button class="mtab ${mode==='active'?'on':''}" onclick="MOVER_TAB='active';renderBody()">最活跃 · 成交额</button>`;
-  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="MOVER_TAB='acc';renderBody()">吸筹榜 · 资金净流入</button>`;
-  const b3=`<button class="mtab ${mode==='score'?'on':''}" onclick="MOVER_TAB='score';renderBody()">按系统分排序</button>`;
+  const b1=`<button class="mtab ${mode==='active'?'on':''}" onclick="window.MOVER_TAB='active';renderBody()">最活跃 · 成交额</button>`;
+  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="window.MOVER_TAB='acc';renderBody()">吸筹榜 · 资金净流入</button>`;
+  const b3=`<button class="mtab ${mode==='score'?'on':''}" onclick="window.MOVER_TAB='score';renderBody()">按系统分排序</button>`;
   let tbl;
   if(mode==='score'){
     const rows=active.slice().sort((a,b)=>(cm[b.sym]?cm[b.sym].score:0)-(cm[a.sym]?cm[a.sym].score:0));
@@ -712,8 +714,8 @@ function viewFlow(s){
   const conv=(inst.top_conviction||[]), acc=(f.accumulation||[]);
   const cm=compLookup(s);
   const mode=window.FLOW_TAB||'inst';
-  const b1=`<button class="mtab ${mode==='inst'?'on':''}" onclick="FLOW_TAB='inst';renderBody()">机构共识</button>`;
-  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="FLOW_TAB='acc';renderBody()">资金吸筹</button>`;
+  const b1=`<button class="mtab ${mode==='inst'?'on':''}" onclick="window.FLOW_TAB='inst';renderBody()">机构共识</button>`;
+  const b2=`<button class="mtab ${mode==='acc'?'on':''}" onclick="window.FLOW_TAB='acc';renderBody()">资金吸筹</button>`;
   const instTbl=`<table><thead><tr><th>标的</th><th>价格</th><th>日</th><th>评级</th>
     <th>买/持/卖</th><th>目标价</th><th>上行空间</th><th>共识分</th><th>系统分</th></tr></thead>
     <tbody>${conv.map(x=>{const c=cm[x.sym]||{}; return `<tr><td class="sym">${esc(x.sym)}${starIf(c)}${vcpTag(c)}</td><td>${n2(x.price)}</td>
@@ -812,7 +814,7 @@ function viewVcp(s){
   const rows = mode==='buy' ? (v.buy_top10||[])
              : mode==='extra' ? (v.extra_top10||[])
              : (v.candidates||[]);
-  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="VCP_TAB='${k}';renderBody()">${l}</button>`;
+  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="window.VCP_TAB='${k}';renderBody()">${l}</button>`;
   const title = mode==='buy' ? '买入前10榜 · 形态最强'
               : mode==='extra' ? '额外买入前10榜 · 次优梯队'
               : `全部候选 · ${v.n} 只（按 VCP 分 → 距突破% 排序）`;
@@ -864,7 +866,7 @@ function viewScan(s){
              : mode==='extra' ? (v.extra_top10||[])
              : mode==='sell' ? (v.sells||[])
              : (v.buys||[]);
-  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="SCAN_TAB='${k}';renderBody()">${l}</button>`;
+  const btn=(k,l)=>`<button class="mtab ${mode===k?'on':''}" onclick="window.SCAN_TAB='${k}';renderBody()">${l}</button>`;
   const title = mode==='buy' ? '买入前10榜 · 综合分最高'
               : mode==='extra' ? '额外买入前10榜'
               : mode==='sell' ? '卖出信号榜'

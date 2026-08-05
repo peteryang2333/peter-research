@@ -23,6 +23,7 @@ import re
 import glob
 import statistics
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
@@ -33,11 +34,23 @@ from requests.adapters import HTTPAdapter
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " \
      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": UA, "Accept": "application/json"})
-# connection pool sized for the 6 worker threads
+# requests.Session is NOT thread-safe: sharing one Session across the 6 worker
+# threads lets a pooled connection get half-read in one thread and stall another
+# (observed as an indefinite ssl.read hang against api.nasdaq.com). Give each
+# thread its own Session instead.
 _ADAPTER = HTTPAdapter(pool_connections=8, pool_maxsize=8, max_retries=0)
-SESSION.mount("https://", _ADAPTER)
+_LS = threading.local()
+
+
+def _session():
+    s = getattr(_LS, "session", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update({"User-Agent": UA, "Accept": "application/json",
+                          "Connection": "close"})
+        s.mount("https://", _ADAPTER)
+        _LS.session = s
+    return s
 
 # ----------------------------------------------------------------------------
 # universes
@@ -146,13 +159,10 @@ def cache_put(key, value):
         pass
 
 
-def http_json(url, timeout=25, tries=4):
-    # The free World Bank endpoint is flaky through some proxies (intermittent
-    # 400/502 even for valid queries), so retry a broader set of status codes
-    # before giving up. A genuine 404 still bails immediately.
+def _raw_http_json(url, timeout=25, tries=4):
     for i in range(tries):
         try:
-            r = SESSION.get(url, timeout=timeout)
+            r = _session().get(url, timeout=timeout)
             if r.status_code == 200:
                 return r.json()
             if r.status_code in (400, 429, 500, 502, 503):
@@ -162,6 +172,27 @@ def http_json(url, timeout=25, tries=4):
         except (requests.RequestException, ValueError):
             time.sleep(0.8 * (i + 1))
     return None
+
+
+def http_json(url, timeout=25, tries=4):
+    # HARD wall-clock cap: api.nasdaq.com (and some flaky proxies) answer the
+    # TLS handshake then trickle the body (slow-loris style), so requests' per-
+    # recv read timeout never trips and a stalled call would hang the whole
+    # collector forever. Run the fetch in a daemon thread and join with a cap;
+    # on overrun we return None and let the (leaked) worker die at process exit.
+    cap = timeout * tries + 4
+    box = {}
+
+    def _work():
+        try:
+            box["v"] = _raw_http_json(url, timeout, tries)
+        except Exception:
+            box["v"] = None
+
+    th = threading.Thread(target=_work, daemon=True)
+    th.start()
+    th.join(cap)
+    return box.get("v")
 
 
 # ----------------------------------------------------------------------------
@@ -214,8 +245,9 @@ def get_quote(ticker, ttl=120):
     if cached is not None:
         return cached
     for asset in ("etf", "stocks"):
+        time.sleep(0.15)  # pace nasdaq to dodge throttle / slow-loris stalls
         j = http_json(f"https://api.nasdaq.com/api/quote/{ticker.upper()}"
-                      f"/info?assetclass={asset}", timeout=15, tries=2)
+                      f"/info?assetclass={asset}", timeout=8, tries=1)
         pd_ = ((j or {}).get("data") or {}).get("primaryData") or {}
         price = _money(pd_.get("lastSalePrice"))
         if price:
@@ -257,8 +289,9 @@ def get_analyst(ticker, ttl=6 * 3600):
     cached = cache_get(key, ttl)
     if cached is not None:
         return cached
+    time.sleep(0.15)  # pace nasdaq to dodge throttle / slow-loris stalls
     j = http_json(f"https://api.nasdaq.com/api/analyst/{ticker.upper()}/targetprice",
-                  timeout=15, tries=2)
+                  timeout=8, tries=1)
     co = ((j or {}).get("data") or {}).get("consensusOverview")
     if not co:
         return None
@@ -1112,14 +1145,32 @@ def gh_text(repo, path, ref="main", timeout=25, tries=3):
         (GH_API.format(owner=GH_OWNER, repo=repo, ref=ref, path=q),
          "application/vnd.github.raw"),
     ]
+    cap = timeout + 4
+
+    def _get(url, accept):
+        # hard-capped get: same slow-loris guard as http_json
+        box = {}
+
+        def _w():
+            try:
+                box["r"] = _session().get(url, timeout=timeout,
+                                         headers={"Accept": accept})
+            except Exception:
+                box["r"] = None
+
+        th = threading.Thread(target=_w, daemon=True)
+        th.start()
+        th.join(cap)
+        return box.get("r")
+
     for attempt in range(tries):
         for url, accept in urls:
             try:
-                r = SESSION.get(url, timeout=timeout, headers={"Accept": accept})
-                if r.status_code == 200 and r.text:
+                r = _get(url, accept)
+                if r is not None and r.status_code == 200 and r.text:
                     r.encoding = "utf-8"
                     return r.text
-                if r.status_code == 404:
+                if r is not None and r.status_code == 404:
                     return None
             except Exception:
                 pass
@@ -1617,7 +1668,7 @@ def main():
     ap.add_argument("--equity", default="/opt/daily-signal-bridge/equity_state.json")
     ap.add_argument("--nlv", default="/opt/daily-signal-bridge/daily_nlv.json",
                     help="daily NLV series written by the bridge (private only)")
-    ap.add_argument("--trades", default="/opt/peter-research/trades.json",
+    ap.add_argument("--trades", default="/opt/peter-review/trades.json",
                     help="VM-side accumulated trade journal (private only)")
     ap.add_argument("--public", action="store_true",
                     help="strip personal broker data (real holdings, NLV, equity) "

@@ -4,7 +4,7 @@
 # bridge's docker volume.
 set -euo pipefail
 
-BASE=/opt/peter-research
+BASE=/opt/peter-review
 STATE=/var/lib/docker/volumes/vps_bridge_data/_data
 LOG=$BASE/refresh.log
 

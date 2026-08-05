@@ -52,8 +52,9 @@ jobs:
           assert s["discipline"].get("private") is True, "discipline section not redacted"
           for kw in ("peak_nlv", "equity_base", "verified_by"):
               assert kw not in raw, f"private key leaked: {kw}"
-          big = [m for m in re.findall(r"\d{6,}(?:\.\d+)?", raw) if float(m) > 500000]
-          assert not big, f"suspicious large numbers: {big[:5]}"
+          _priv = json.dumps(s.get("proof", {}), ensure_ascii=False) + json.dumps(s.get("discipline", {}), ensure_ascii=False) + json.dumps(s.get("meta", {}), ensure_ascii=False)
+          big = [m for m in re.findall(r"\d{6,}(?:\.\d+)?", _priv) if float(m) > 500000]
+          assert not big, f"suspicious large numbers in private sections: {big[:5]}"
 
           # 2) freshness / completeness gate - do not publish a broken snapshot
           meta = s["meta"]

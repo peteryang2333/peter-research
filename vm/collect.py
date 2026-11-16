@@ -1306,7 +1306,7 @@ def build_vcp(vcp, hist_cache, spy_c, flow_rows, inst_rows):
 
 
 # ----------------------------------------------------------------------------
-# Full-market scanner fusion — peteryang2333/stock-screener publishes
+# Full-market scanner fusion — peteryang2333/stock-screener-v2 publishes
 # data/daily_scans/latest_signals.json every weekday; we score its buy/sell
 # lists with the same 5-factor system so both engines are directly comparable.
 # ----------------------------------------------------------------------------
@@ -1679,7 +1679,7 @@ def main():
     ap.add_argument("--remote", action="store_true", default=True,
                     help="pull the daily VCP scan and full-market scan straight "
                          "out of the sibling GitHub repos (vcp-screener / "
-                         "stock-screener). On by default; this is how the public "
+                         "stock-screener-v2). On by default; this is how the public "
                          "site stays fresh with no VM.")
     ap.add_argument("--no-remote", dest="remote", action="store_false",
                     help="disable the cross-repo pull")
@@ -1716,16 +1716,16 @@ def main():
         except Exception as e:
             print("WARN remote VCP fetch failed:", e, file=sys.stderr)
 
-    # Full-market scanner signals from peteryang2333/stock-screener.
+    # Full-market scanner signals from peteryang2333/stock-screener-v2.
     screener = None
     if args.remote:
         try:
-            j = gh_text("stock-screener", "data/daily_scans/latest_signals.json")
+            j = gh_text("stock-screener-v2", "data/daily_scans/latest_signals.json")
             if j:
                 screener = json.loads(j)
-                screener["source"] = "github:peteryang2333/stock-screener"
+                screener["source"] = "github:peteryang2333/stock-screener-v2"
                 screener["source_url"] = ("https://github.com/peteryang2333/"
-                                          "stock-screener/blob/main/data/"
+                                          "stock-screener-v2/blob/main/data/"
                                           "daily_scans/latest_signals.json")
                 print(f"Screener remote: {len(screener.get('buys') or [])} buys, "
                       f"scan {screener.get('scan_date')}", file=sys.stderr)
@@ -1839,7 +1839,7 @@ def main():
             "sources": ["stockanalysis.com", "api.nasdaq.com (quote+analyst)",
                         "api.worldbank.org", "local strategy state",
                         "github:peteryang2333/vcp-screener (每日 VCP 扫描)",
-                        "github:peteryang2333/stock-screener (每日全市场扫描)"],
+                        "github:peteryang2333/stock-screener-v2 (每日全市场扫描)"],
             "note": "No Yahoo/yfinance (rate-limited for this account).",
         },
     }

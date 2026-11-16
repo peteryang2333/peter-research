@@ -36,7 +36,7 @@ jobs:
         # --remote (default on) reads today's scans straight out of the sibling
         # public repos, so the site stays fresh with no VM in the loop:
         #   peteryang2333/vcp-screener    数据/最新_US.txt   (VCP 形态扫描)
-        #   peteryang2333/stock-screener  data/daily_scans/latest_signals.json
+        #   peteryang2333/stock-screener-v2  data/daily_scans/latest_signals.json
         run: python vm/collect.py --public --remote --out docs/snapshot.json
 
       - name: Verify snapshot is sane and contains no private data

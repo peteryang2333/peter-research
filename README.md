@@ -26,7 +26,7 @@ It runs in two flavours from the same code:
 | 05 资金·机构 | Flow & Institutional | Analyst consensus (buy/hold/sell, target upside) + money-flow accumulation list | nasdaq consensus |
 | 06 复合排名 | Composite Ranker | **5-factor fusion** = 0.35·technical + 0.10·activity + 0.20·flow + 0.20·institutional + 0.15·thesis, with a per-stock "why highlighted" list | all of the above |
 | 07 VCP融合 | VCP Fusion | Daily volatility-contraction scan folded into the same 5-factor system: **买入前10榜 + 额外买入前10榜 + 全部候选** with system score, 综合 verdict, breakout trigger & stops | [`peteryang2333/vcp-screener`](https://github.com/peteryang2333/vcp-screener) (cross-repo) |
-| 08 全市场扫描 | Full-Market Scan | ~3 800 US stocks scanned daily; every buy/sell signal re-scored by the same 5-factor system, with phase, entry quality, stop, R:R | [`peteryang2333/stock-screener`](https://github.com/peteryang2333/stock-screener) (cross-repo) |
+| 08 全市场扫描 | Full-Market Scan | ~3 800 US stocks scanned daily; every buy/sell signal re-scored by the same 5-factor system, with phase, entry quality, stop, R:R | [`peteryang2333/stock-screener-v2`](https://github.com/peteryang2333/stock-screener-v2) (cross-repo) |
 | 09 打分 | Score | Transparent screener on your thematic watchlist (trend, momentum, relative strength, distance from high, volume) | derived |
 | 10 纪律 | Discipline | Percent-risk position sizer; risk budget scaled by the live posture (private: real holdings/NLV) | local state |
 | 11 验证 | Proof | Current holding, NLV, drawdown, equity curve, rotation log — **private only** | local strategy state |
@@ -55,7 +55,7 @@ without anything running on a server of mine.
 | Upstream repo | File read | Upstream schedule (UTC) |
 |---|---|---|
 | `peteryang2333/vcp-screener` | `数据/最新_US.txt` | 21:30 Mon–Fri (after the US close) |
-| `peteryang2333/stock-screener` | `data/daily_scans/latest_signals.json` | 12:00 Mon–Fri |
+| `peteryang2333/stock-screener-v2` | `data/daily_scans/latest_signals.json` | 12:00 Mon–Fri |
 
 A missing or stale upstream file never breaks the build: `gh_text()` returns `None`, the tab
 renders an explanatory notice, and the rest of the snapshot publishes as usual. Only the
